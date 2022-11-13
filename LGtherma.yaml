@@ -512,28 +512,6 @@ interval:
   - interval: 20s
     then: !include { file: state_machine.c }
   - interval: 60s
-    then: 
-      - lambda: |- 
-          static int nadraaitijd = 0;
-          if (id(thermostat_wp_heat).state) {
-            nadraaitijd = 30;
-            return;
-          }
-          if (nadraaitijd > 0) {
-              nadraaitijd--;
-              ESP_LOGD("modbus_enable_heat", "Turned controller on; nadraaien: %f %f %d", id(huiskamer_vloer).state, id(huiskamer_lucht).state, nadraaitijd);
-              id(modbus_enable_heat).turn_on();
-          } else {
-            if ((id(huiskamer_vloer).state<20.0) || // vloer is koud, rondpompen heeft weinig zin
-                (id(huiskamer_lucht).state>id(huiskamer_vloer).state)) { //lucht is warmer dan de vloer, rondpompen heeft weinig zin
-              ESP_LOGD("modbus_enable_heat", "Turned controller off: %f %f", id(huiskamer_vloer).state, id(huiskamer_lucht).state);
-              id(modbus_enable_heat).turn_off();
-            } else {
-              ESP_LOGD("modbus_enable_heat", "Turned controller on: %f %f %d", id(huiskamer_vloer).state, id(huiskamer_lucht).state, nadraaitijd);
-              id(modbus_enable_heat).turn_on();
-            }
-          }
-  - interval: 60s
     then:
       - lambda: |-
           if (id(thermostat_timer)>0) {
