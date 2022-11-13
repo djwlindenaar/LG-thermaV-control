@@ -52,6 +52,10 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  - id: thermostat_timer
+    type: int
+    restore_value: no
+    initial_value: "0"
   - id: switch_off_requested
     type: bool
     restore_value: no
@@ -143,19 +147,34 @@ script:
     then: 
       - delay: 1s
       - lambda: !lambda |-
+          static bool switched = false;
           ESP_LOGD("Thermostaat", "T: %f, %f, ref: %f", id(huiskamer_lucht).state, (id(huiskamer_lucht).state-19.0), id(thermostat_wp_heat).state?0.2:0.0);
+          ESP_LOGD("Thermostaat", "switched: %s, timer: %d", switched?"True":"False", id(thermostat_timer));
           if ((id(huiskamer_lucht).state-id(huiskamer_thermostaat_target).state) <= (id(thermostat_wp_heat).state?0.2:0.0)) {
             ESP_LOGD("Thermostaat", "Thermostaat aan");
             if (!(id(thermostat_wp_heat).state)) {
-              id(thermostat_wp_heat).turn_on();
-              id(switch_off_requested) = false;
-            }
+              if (!switched) {
+                switched = true;
+                id(thermostat_timer) = 15;
+              }
+              if (id(thermostat_timer)==0) {
+                id(thermostat_wp_heat).turn_on();
+                id(switch_off_requested) = false;
+              }
+            } else switched = false;
           } else {
             ESP_LOGD("Thermostaat", "Thermostaat uit");
             if ((id(thermostat_wp_heat).state)) {
-              id(switch_off_requested) = true;
-              if (id(minimum_run_time_passed) || (!id(compressor_running).state)) id(thermostat_wp_heat).turn_off();
-            }
+              if (!switched) {
+                switched = true;
+                id(thermostat_timer) = 15;
+              }
+
+              if (id(thermostat_timer)==0) {
+                id(switch_off_requested) = true;
+                if (id(minimum_run_time_passed) || (!id(compressor_running).state)) id(thermostat_wp_heat).turn_off();
+              }
+            } else switched = false;
           }
 
 
@@ -486,7 +505,7 @@ switch:
             id(modulation_started) = false;
             id(minimum_run_time_script).execute();
             //started by minimum runtime script id(modulation_start_script).execute(); 
-        - switch.turn_on: modbus_enable_heat
+        #- switch.turn_on: modbus_enable_heat
 
 
 interval:
@@ -514,7 +533,13 @@ interval:
               id(modbus_enable_heat).turn_on();
             }
           }
-
+  - interval: 60s
+    then:
+      - lambda: |-
+          if (id(thermostat_timer)>0) {
+            thermostat_timer--;
+            id(thermostaat).execute();
+          }  
 
 binary_sensor:
 
