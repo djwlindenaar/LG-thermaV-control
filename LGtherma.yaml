@@ -73,8 +73,8 @@ ota:
   password: ""
 
 wifi:
-  ssid: "***REMOVED***"
-  password: "***REMOVED***"
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
   domain: ".home.lan"
 
   # Enable fallback hotspot (captive portal) in case wifi connection fails
