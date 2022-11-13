@@ -8,7 +8,6 @@ esphome:
     then:
       lambda: !lambda |-
           //Set initial states
-          id(run_start) = false;
           id(minimum_run_time_passed) = false;
           id(switch_off_requested) = false;
 
@@ -36,18 +35,6 @@ globals:
     type: float
     restore_value: no
     initial_value: '27'
-  - id: working_mode
-    type: int
-    restore_value: no
-    initial_value: '0'
-  - id: var_pendel_watertemp_target
-    type: float
-    restore_value: no
-    initial_value: '27'
-  - id: run_start
-    type: bool
-    restore_value: no
-    initial_value: 'false'
   - id: minimum_run_time_passed
     type: bool
     restore_value: no
@@ -57,10 +44,6 @@ globals:
     restore_value: no
     initial_value: "0"
   - id: switch_off_requested
-    type: bool
-    restore_value: no
-    initial_value: 'false'
-  - id: modulation_started
     type: bool
     restore_value: no
     initial_value: 'false'
@@ -121,7 +104,6 @@ script:
       - wait_until: 
           condition:
             binary_sensor.is_on: compressor_running
-      - script.execute: modulation_start_script
       - lambda: |-
           ESP_LOGD("thermostat-delay", "minimum_run_time_script compressor runnning, starting delay timer.");
       - delay: !lambda "return id(minimum_run_time).state*60*1000;"
@@ -134,14 +116,6 @@ script:
             //Switch off
             id(thermostat_wp_heat).turn_off();
           }
-  - id: modulation_start_script
-    mode: restart
-    then:
-      - delay: 15min
-      - lambda: |-
-          //Set modulation_started to true
-          id(modulation_started) = true;
-          ESP_LOGD("anti-pendel", "Modulation_started = true.");
   - id: thermostaat
     mode: restart
     then: 
@@ -215,6 +189,11 @@ modbus_controller:
     modbus_id: modbus_pw
     update_interval: 5s
     setup_priority: -10
+
+text_sensor:
+  - platform: template
+    name: "LG Controller state"
+    id: lg_controller_state
 
 number:
   - platform: template
@@ -486,36 +465,29 @@ switch:
       then:
         - lambda: |-
             ESP_LOGD("thermostat_wp_heat", "Thermostat turned off");
-            //Update working mode
-            id(working_mode) = 0;
             id(minimum_run_time_script).stop();
-            id(modulation_start_script).stop();
-        - switch.turn_off: modbus_enable_heat
-        - delay: 10s
-        - switch.turn_on: modbus_enable_heat
+        #- switch.turn_off: modbus_enable_heat
+        #- delay: 10s
+        #- switch.turn_on: modbus_enable_heat
     turn_on_action:
       then:
         - lambda: |-
             ESP_LOGD("thermostat_wp_heat", "Thermostat turned on");
-            //Update working mode
-            id(working_mode) = 2;
-            id(run_start) = true;
             id(minimum_run_time_passed) = false;
             id(switch_off_requested) = false;
-            id(modulation_started) = false;
             id(minimum_run_time_script).execute();
-            //started by minimum runtime script id(modulation_start_script).execute(); 
         #- switch.turn_on: modbus_enable_heat
 
 
 interval:
   - interval: 20s
+    id: state_machine
     then: !include { file: state_machine.c }
   - interval: 60s
     then:
       - lambda: |-
           if (id(thermostat_timer)>0) {
-            thermostat_timer--;
+            id(thermostat_timer)--;
             id(thermostaat).execute();
           }  
 
@@ -852,8 +824,9 @@ sensor:
       - multiply: 0.01
   - platform: modbus_controller
     modbus_controller_id: lg
-    name: "Unknown register 24"
-    id: temp24
+    name: "Compressor speed"
+    id: compressor_speed
+    unit_of_measurement: "Hz"
     register_type: read
     address: 24
     value_type: U_WORD
@@ -862,7 +835,7 @@ sensor:
     name: "Unknown register 63"
     id: temp63
     register_type: read
-    address: 24
+    address: 63
     value_type: U_WORD
 
 
@@ -901,13 +874,6 @@ sensor:
     update_interval: 60s
     lambda: |-
         return id(stooklijn_target);
-  - platform: template
-    name: "Anti-pendel Watertemp Target"
-    id: pendel_watertemp_target
-    unit_of_measurement: "°C"
-    update_interval: 60s
-    lambda: |-
-        return round(id(var_pendel_watertemp_target)*10)/10;
 
 
 
