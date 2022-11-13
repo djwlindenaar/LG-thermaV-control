@@ -1,0 +1,922 @@
+substitutions:
+  device_name: lgtherma
+
+esphome:
+  name: "${device_name}"
+  on_boot:
+    priority: 200
+    then:
+      lambda: !lambda |-
+          //Set initial states
+          id(run_start) = false;
+          id(minimum_run_time_passed) = false;
+          id(switch_off_requested) = false;
+
+esp32:
+  board: nodemcu-32s
+#  framework:
+#    type: arduino
+#    version: 1.0.6
+#    source: file:///home/daniel/LG/myplatform/arduino-esp32-1.0.6
+
+# Enable logging
+logger:
+  logs:
+    modbus_controller.sensor: WARN
+    modbus.number: WARN
+    number: WARN
+    modbus_controller.output: WARN
+    esp32.preferences: WARN
+    sensor: WARN
+#  level: INFO
+#  level: VERBOSE
+
+globals:
+  - id: stooklijn_target
+    type: float
+    restore_value: no
+    initial_value: '27'
+  - id: working_mode
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: var_pendel_watertemp_target
+    type: float
+    restore_value: no
+    initial_value: '27'
+  - id: run_start
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: minimum_run_time_passed
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: switch_off_requested
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: modulation_started
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+# Enable Home Assistant API
+api:
+  password: ""
+
+ota:
+  password: ""
+
+wifi:
+  ssid: "***REMOVED***"
+  password: "***REMOVED***"
+  domain: ".home.lan"
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Lgtherma Fallback Hotspot"
+    password: "7UtG4JANJliQ"
+
+captive_portal:
+
+#external_components:
+#  - source: my_components
+script:
+  - id: update_stooklijn_target
+    then: 
+      lambda: !lambda |-
+        float oat = id(buiten_temp).state;
+        //Heating
+        //Formula is wTemp = -Z x (OAT-stooklijn_min_wtemp) + stooklijn_start_temp
+        //Formula to calculate -Z = ((stooklijn_max_wtemp-stooklijn_min_wtemp)) / (stooklijn_min_oat - stooklijn_start_temp))
+        const float Z = ((float)id(stooklijn_max_wtemp).state-(float)id(stooklijn_min_wtemp).state)/( (float)id(stooklijn_min_oat).state - (float)id(stooklijn_start_temp).state);
+        ESP_LOGD("stooklijn", "Stooklijn, working mode is heating, with oat: %f, Z: %f",oat, Z);
+        if(oat < id(stooklijn_min_oat).state) {
+          //If oat below minimum oat, clamp to minimum value
+          oat = id(stooklijn_min_oat).state;
+        } else if (oat > id(stooklijn_start_temp).state) {
+          //If oat above max value, clamp to maximum value
+          oat = id(stooklijn_start_temp).state;
+        }
+        id(stooklijn_target) = (int)round((Z * (oat-id(stooklijn_start_temp).state))+id(stooklijn_min_wtemp).state);
+        //Add stooklijn offset
+        id(stooklijn_target) = id(stooklijn_target) + id(wp_stooklijn_offset).state;
+        //Make sure target is not above max water or below minimum temp
+        if(id(stooklijn_target) > id(stooklijn_max_wtemp).state) id(stooklijn_target) = id(stooklijn_max_wtemp).state;
+        if(id(stooklijn_target) < id(stooklijn_min_wtemp).state) id(stooklijn_target) = id(stooklijn_min_wtemp).state;
+  
+        ESP_LOGD("stooklijn", "New stooklijn target value (after correction): %f", id(stooklijn_target));
+        //Publish new stooklijn value to watertemp value sensor
+        id(watertemp_target).publish_state(id(stooklijn_target));
+  - id: minimum_run_time_script
+    mode: restart
+    then:
+      - lambda: |-
+          ESP_LOGD("thermostat-delay", "minimum_run_time_script called, wait for the compressor to run.");
+      - wait_until: 
+          condition:
+            binary_sensor.is_on: compressor_running
+      - script.execute: modulation_start_script
+      - lambda: |-
+          ESP_LOGD("thermostat-delay", "minimum_run_time_script compressor runnning, starting delay timer.");
+      - delay: !lambda "return id(minimum_run_time).state*60*1000;"
+      - lambda: |-
+          //Set minum run time passed to true, so that HP can switch off when thermostat switches off (after delay)
+          ESP_LOGD("thermostat-delay", "minimum_run_time_script delay passed. switch_off_requested: %d",id(switch_off_requested));
+          id(minimum_run_time_passed) = true;
+          //Check if switch off was already requested
+          if(id(switch_off_requested)){
+            //Switch off
+            id(thermostat_wp_heat).turn_off();
+          }
+  - id: modulation_start_script
+    mode: restart
+    then:
+      - delay: 15min
+      - lambda: |-
+          //Set modulation_started to true
+          id(modulation_started) = true;
+          ESP_LOGD("anti-pendel", "Modulation_started = true.");
+  - id: thermostaat
+    mode: restart
+    then: 
+      - delay: 1s
+      - lambda: !lambda |-
+          ESP_LOGD("Thermostaat", "T: %f, %f, ref: %f", id(huiskamer_lucht).state, (id(huiskamer_lucht).state-19.0), id(thermostat_wp_heat).state?0.2:0.0);
+          if ((id(huiskamer_lucht).state-id(huiskamer_thermostaat_target).state) <= (id(thermostat_wp_heat).state?0.2:0.0)) {
+            ESP_LOGD("Thermostaat", "Thermostaat aan");
+            if (!(id(thermostat_wp_heat).state)) {
+              id(thermostat_wp_heat).turn_on();
+              id(switch_off_requested) = false;
+            }
+          } else {
+            ESP_LOGD("Thermostaat", "Thermostaat uit");
+            if ((id(thermostat_wp_heat).state)) {
+              id(switch_off_requested) = true;
+              if (id(minimum_run_time_passed) || (!id(compressor_running).state)) id(thermostat_wp_heat).turn_off();
+            }
+          }
+
+
+
+
+modbus:
+  - id: modbus_lg
+    uart_id: uart_modbus_lg
+    send_wait_time: 2000ms
+  - id: modbus_pw
+    uart_id: uart_modbus_pw
+
+uart:
+  - id: uart_modbus_lg
+    tx_pin: GPIO23
+    rx_pin: GPIO22
+    baud_rate: 9600
+    parity: none
+    data_bits: 8
+    stop_bits: 1
+  - id: uart_modbus_pw
+    tx_pin: GPIO19
+    rx_pin: GPIO18
+    baud_rate: 9600
+    parity: even
+    data_bits: 8
+    stop_bits: 1
+
+modbus_controller:
+  - id: lg
+    address: 0x2 # the Modbus device addr
+    modbus_id: modbus_lg
+    update_interval: 5s #this is our main 'clock' all dependel logic follows this pace
+    setup_priority: -10
+  
+  - id: pw
+    address: 0x1 # the Modbus device addr
+    modbus_id: modbus_pw
+    update_interval: 5s
+    setup_priority: -10
+
+number:
+  - platform: template
+    name: "Stooklijn offset"
+    id: wp_stooklijn_offset
+    min_value: -5
+    max_value: 5
+    initial_value: 0
+    step: 1
+    restore_value: yes
+    unit_of_measurement: "°C"
+    optimistic: true
+    set_action:
+      then:
+        - script.execute: update_stooklijn_target
+  - platform: template
+    name: "Thermostaat target"
+    id: huiskamer_thermostaat_target
+    min_value: 10
+    max_value: 25
+    initial_value: 19
+    step: 1
+    restore_value: yes
+    unit_of_measurement: "°C"
+    optimistic: true
+    set_action:
+      then:
+        script.execute: thermostaat
+  - platform: template
+    id: stooklijn_min_oat
+    name: "Stooklijn Minimum Buitentemperatuur"
+    min_value: -25
+    max_value: 0
+    step: 1
+    restore_value: yes
+    initial_value: -15
+    unit_of_measurement: "°C"
+    optimistic: true
+    set_action:
+      then:
+        - script.execute: update_stooklijn_target
+  - platform: template
+    id: stooklijn_max_wtemp
+    name: "Stooklijn Maximum Watertemperatuur"
+    min_value: 20
+    max_value: 60
+    step: 1
+    restore_value: yes
+    initial_value: 35
+    unit_of_measurement: "°C"
+    optimistic: true
+    set_action:
+      then:
+        - script.execute: update_stooklijn_target
+  - platform: template
+    id: stooklijn_min_wtemp
+    name: "Stooklijn Minimum Watertemperatuur"
+    min_value: 20
+    max_value: 35
+    step: 1
+    restore_value: yes
+    initial_value: 22
+    unit_of_measurement: "°C"
+    optimistic: true
+    set_action:
+      then:
+        - script.execute: update_stooklijn_target
+  - platform: template
+    id: stooklijn_start_temp
+    name: "Stooklijn Start Buitentemperatuur"
+    min_value: 0
+    max_value: 20
+    step: 1
+    restore_value: yes
+    initial_value: 15
+    unit_of_measurement: "°C"
+    optimistic: true
+    set_action:
+      then:
+        - script.execute: update_stooklijn_target
+  - platform: template
+    id: minimum_run_time
+    name: "Minimale run tijd"
+    min_value: 0
+    max_value: 120
+    step: 1
+    restore_value: yes
+    initial_value: 30
+    unit_of_measurement: "min"
+    optimistic: true
+  - platform: template
+    id: thermostat_off_delay
+    name: "thermostat off delay"
+    min_value: 0
+    max_value: 10
+    step: 1
+    restore_value: yes
+    initial_value: 1
+    unit_of_measurement: "min"
+    optimistic: true
+  - platform: modbus_controller
+    id: operation_mode
+    modbus_controller_id: lg
+    name: "LG Operation Mode"
+    register_type: holding
+    address: 0
+    min_value: 0
+    max_value: 4
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG control method"
+    id: control_method
+    register_type: holding
+    address: 1
+    #min_value: 0
+    #max_value: 5
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG water temperature target"
+    id: water_temp_target_output
+    register_type: holding
+    address: 2
+    value_type: U_WORD
+    step: 0.1
+    multiply: 10
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG Energy state"
+    id: energy_state
+    register_type: holding
+    address: 9
+    min_value: 0
+    max_value: 8
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG unkown 10"
+    id: holding10
+    address: 10
+    register_type: holding
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG unkown 11"
+    id: holding11
+    address: 11
+    register_type: holding
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG unkown 12"
+    id: holding12
+    address: 12
+    register_type: holding
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG unkown 13"
+    id: holding13
+    address: 13
+    register_type: holding
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG unkown 14"
+    id: holding14
+    address: 14
+    register_type: holding
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG unkown 15"
+    id: holding15
+    address: 15
+    register_type: holding
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG unkown 16"
+    id: holding16
+    address: 16
+    register_type: holding
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG unkown 17"
+    id: holding17
+    address: 17
+    register_type: holding
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG unkown 18"
+    id: holding18
+    address: 18
+    register_type: holding
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG unkown 19"
+    id: holding19
+    address: 19
+    register_type: holding
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG unkown 20"
+    id: holding20
+    address: 20
+    register_type: holding
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG unkown 21"
+    id: holding21
+    address: 21
+    register_type: holding
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG unkown 22"
+    id: holding22
+    address: 22
+    register_type: holding
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG unkown 62"
+    id: holding62
+    address: 0x3e
+    register_type: holding
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG unkown 63"
+    id: holding63
+    address: 0x3f
+    register_type: holding
+    value_type: U_WORD
+
+switch:
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG enable Heat/Cool"
+    id: modbus_enable_heat
+    register_type: coil
+    address: 0
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG enable DHW"
+    id: modbus_enable_dhw
+    register_type: coil
+    address: 1
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "LG Set Silent Mode"
+    id: modbus_set_silent_mode
+    register_type: coil
+    address: 2
+  - platform: restart
+    name: "LG Therma ESPHome Restart"
+  - platform: template
+    name: "WP Heat"
+    id: thermostat_wp_heat
+    optimistic: true
+    turn_off_action:
+      then:
+        - lambda: |-
+            ESP_LOGD("thermostat_wp_heat", "Thermostat turned off");
+            //Update working mode
+            id(working_mode) = 0;
+            id(minimum_run_time_script).stop();
+            id(modulation_start_script).stop();
+        - switch.turn_off: modbus_enable_heat
+        - delay: 10s
+        - switch.turn_on: modbus_enable_heat
+    turn_on_action:
+      then:
+        - lambda: |-
+            ESP_LOGD("thermostat_wp_heat", "Thermostat turned on");
+            //Update working mode
+            id(working_mode) = 2;
+            id(run_start) = true;
+            id(minimum_run_time_passed) = false;
+            id(switch_off_requested) = false;
+            id(modulation_started) = false;
+            id(minimum_run_time_script).execute();
+            //started by minimum runtime script id(modulation_start_script).execute(); 
+        - switch.turn_on: modbus_enable_heat
+
+
+interval:
+  - interval: 20s
+    then: !include { file: code_water_aanvoer.c }
+  - interval: 60s
+    then: 
+      - lambda: |- 
+          static int nadraaitijd = 0;
+          if (id(thermostat_wp_heat).state) {
+            nadraaitijd = 30;
+            return;
+          }
+          if (nadraaitijd > 0) {
+              nadraaitijd--;
+              ESP_LOGD("modbus_enable_heat", "Turned controller on; nadraaien: %f %f %d", id(huiskamer_vloer).state, id(huiskamer_lucht).state, nadraaitijd);
+              id(modbus_enable_heat).turn_on();
+          } else {
+            if ((id(huiskamer_vloer).state<20.0) || // vloer is koud, rondpompen heeft weinig zin
+                (id(huiskamer_lucht).state>id(huiskamer_vloer).state)) { //lucht is warmer dan de vloer, rondpompen heeft weinig zin
+              ESP_LOGD("modbus_enable_heat", "Turned controller off: %f %f", id(huiskamer_vloer).state, id(huiskamer_lucht).state);
+              id(modbus_enable_heat).turn_off();
+            } else {
+              ESP_LOGD("modbus_enable_heat", "Turned controller on: %f %f %d", id(huiskamer_vloer).state, id(huiskamer_lucht).state, nadraaitijd);
+              id(modbus_enable_heat).turn_on();
+            }
+          }
+
+
+binary_sensor:
+
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Pump Running"
+    id: pump_running
+    register_type: discrete_input
+    #skip_updates: 3
+    address: 1
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Compressor Running"
+    id: compressor_running
+    register_type: discrete_input
+    #skip_updates: 3
+    address: 3
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Defrosting"
+    id: defrosting
+    register_type: discrete_input
+    #skip_updates: 3
+    address: 4
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "DHW heating status"
+    id: dhw_heating
+    register_type: discrete_input
+    #skip_updates: 3
+    address: 5
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "DHW desinfection status"
+    id: dhw_desinfection
+    register_type: discrete_input
+    #skip_updates: 3
+    address: 6
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Silent Mode"
+    id: silent_mode
+    register_type: discrete_input
+    #skip_updates: 3
+    address: 7
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Error status"
+    id: error_status
+    register_type: discrete_input
+    #skip_updates: 3
+    address: 13
+    
+sensor:
+  - platform: modbus_controller
+    modbus_controller_id: pw
+    name: "LG Therma L1 Voltage"
+    register_type: holding
+    address: 0x000E
+    unit_of_measurement: "V"
+    value_type: FP32
+    accuracy_decimals: 1
+  - platform: modbus_controller
+    name: "LG Therma L2 Voltage"
+    modbus_controller_id: pw
+    register_type: holding
+    address: 0x0010
+    unit_of_measurement: "V"
+    value_type: FP32
+    accuracy_decimals: 1
+  - platform: modbus_controller
+    modbus_controller_id: pw
+    name: "LG Therma L3 Voltage"
+    register_type: holding
+    address: 0x0012
+    unit_of_measurement: "V"
+    value_type: FP32
+    accuracy_decimals: 1
+  - platform: modbus_controller
+    modbus_controller_id: pw
+    name: "LG Therma Grid Frequency"
+    register_type: holding
+    address: 0x0014
+    unit_of_measurement: "Hz"
+    value_type: FP32
+    accuracy_decimals: 3
+  - platform: modbus_controller
+    modbus_controller_id: pw
+    name: "LG Therma L1 Current"
+    register_type: holding
+    address: 0x0016
+    unit_of_measurement: "A"
+    value_type: FP32
+    accuracy_decimals: 3
+  - platform: modbus_controller
+    modbus_controller_id: pw
+    name: "LG Therma L2 Current"
+    register_type: holding
+    address: 0x0018
+    unit_of_measurement: "A"
+    value_type: FP32
+    accuracy_decimals: 3
+  - platform: modbus_controller
+    modbus_controller_id: pw
+    name: "LG Therma L3 Current"
+    register_type: holding
+    address: 0x001A
+    unit_of_measurement: "A"
+    value_type: FP32
+    accuracy_decimals: 3
+  - platform: modbus_controller
+    modbus_controller_id: pw
+    name: "LG Therma Total Active Power"
+    register_type: holding
+    address: 0x001C
+    unit_of_measurement: "W"
+    value_type: FP32
+    accuracy_decimals: 0
+    filters:
+      - multiply: 1000
+  - platform: modbus_controller
+    modbus_controller_id: pw
+    name: "LG Therma L1 Active Power"
+    register_type: holding
+    address: 0x001E
+    unit_of_measurement: "W"
+    value_type: FP32
+    accuracy_decimals: 0
+    filters:
+      - multiply: 1000
+  - platform: modbus_controller
+    modbus_controller_id: pw
+    name: "LG Therma L2 Active Power"
+    register_type: holding
+    address: 0x0020
+    unit_of_measurement: "W"
+    value_type: FP32
+    accuracy_decimals: 0
+    filters:
+      - multiply: 1000
+  - platform: modbus_controller
+    modbus_controller_id: pw
+    name: "LG Therma L3 Active Power"
+    register_type: holding
+    address: 0x0022
+    unit_of_measurement: "W"
+    value_type: FP32
+    accuracy_decimals: 0
+    filters:
+      - multiply: 1000
+  - platform: modbus_controller
+    modbus_controller_id: pw
+    name: "LG Therma Energy Consumed"
+    register_type: holding
+    address: 0x0100
+    unit_of_measurement: "kWh"
+    value_type: FP32
+    accuracy_decimals: 3
+    state_class: total
+    device_class: energy
+    filters:
+      - median:
+
+
+
+
+
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Error code"
+    id: error_code
+    register_type: read
+    address: 0
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Bedrijfsmodus"
+    id: bedrijfsmodus
+    register_type: read
+    address: 1
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Water retour"
+    id: water_temp_retour
+    register_type: read
+    address: 2
+    unit_of_measurement: "°C"
+    value_type: S_WORD
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Water aanvoer"
+    id: water_temp_aanvoer
+    register_type: read
+    address: 3
+    unit_of_measurement: "°C"
+    value_type: S_WORD
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Binnen temperatuur"
+    id: binnen_temp
+    register_type: read
+    address: 7
+    unit_of_measurement: "°C"
+    value_type: U_WORD
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Flow Rate"
+    id: current_flow_rate
+    register_type: read
+    address: 8
+    unit_of_measurement: "L/m"
+    value_type: U_WORD
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+    lambda: !lambda |-
+      if (id(pump_running).state)
+        return x;
+      else
+        return 0.0;
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Buitentemperatuur"
+    id: buiten_temp
+    register_type: read
+    address: 12
+    unit_of_measurement: "°C"
+    value_type: S_WORD
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+    on_value:
+      then:
+        - lambda: !lambda |-
+            static float prevoat = -1000.0;
+            if (abs(x - prevoat) > 0.1) id(update_stooklijn_target).execute();
+            prevoat = x;
+#      script.execute: update_stooklijn_target
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Unknown Temp 16"
+    id: temp16
+    register_type: read
+    address: 16
+    unit_of_measurement: "°C"
+    value_type: S_WORD
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Unknown register 17"
+    id: temp17
+    register_type: read
+    address: 17
+    value_type: S_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Unknown Temp 18"
+    id: temp18
+    register_type: read
+    address: 18
+    unit_of_measurement: "°C"
+    value_type: S_WORD
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Unknown Temp 19"
+    id: temp19
+    register_type: read
+    address: 19
+    unit_of_measurement: "°C"
+    value_type: S_WORD
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Unknown Temp 20"
+    id: temp20
+    register_type: read
+    address: 20
+    unit_of_measurement: "°C"
+    value_type: S_WORD
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Unknown Temp 21"
+    id: temp21
+    register_type: read
+    address: 21
+    unit_of_measurement: "°C"
+    value_type: S_WORD
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Pressure 1"
+    id: temp22
+    register_type: read
+    address: 22
+    value_type: U_WORD
+    accuracy_decimals: 2
+    unit_of_measurement: "bar"
+    filters:
+      - multiply: 0.01
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Pressure 2"
+    id: temp23
+    register_type: read
+    address: 23
+    value_type: U_WORD
+    accuracy_decimals: 2
+    unit_of_measurement: "bar"
+    filters:
+      - multiply: 0.01
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Unknown register 24"
+    id: temp24
+    register_type: read
+    address: 24
+    value_type: U_WORD
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Unknown register 63"
+    id: temp63
+    register_type: read
+    address: 24
+    value_type: U_WORD
+
+
+
+  - platform: modbus_controller
+    modbus_controller_id: lg
+    name: "Doeltemperatuur"
+    id: doel_temp
+    register_type: holding
+    address: 2
+    unit_of_measurement: "°C"
+    value_type: U_WORD
+    accuracy_decimals: 1
+    #skip_updates: 3
+    filters:
+      - multiply: 0.1
+
+  - platform: homeassistant
+    name: "Huiskamer lucht"
+    id: huiskamer_lucht
+    entity_id: sensor.huiskamer_lucht
+    on_value:
+      then: 
+        script.execute: thermostaat
+
+  - platform: homeassistant
+    name: "Huiskamer vloer"
+    id: huiskamer_vloer
+    entity_id: sensor.huiskamer_vloer
+
+
+  - platform: template
+    name: "Stooklijn Watertemp Target"
+    id: watertemp_target
+    unit_of_measurement: "°C"
+    update_interval: 60s
+    lambda: |-
+        return id(stooklijn_target);
+  - platform: template
+    name: "Anti-pendel Watertemp Target"
+    id: pendel_watertemp_target
+    unit_of_measurement: "°C"
+    update_interval: 60s
+    lambda: |-
+        return round(id(var_pendel_watertemp_target)*10)/10;
+
+
+
+  - platform: wifi_signal
+    name: "${device_name} WiFi Signal"
+    update_interval: 120s
+    accuracy_decimals: 0
+  - platform: uptime
+    name: "${device_name} Uptime"
+    unit_of_measurement: days
+    update_interval: 3600s
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.000011574
+
