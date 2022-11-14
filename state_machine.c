@@ -8,7 +8,7 @@
             static uint32_t statechange = 0; //timer value upon previous state change
             static uint32_t dt = round(id(state_machine).get_update_interval()/1000);
             auto water_temp_call = id(water_temp_target_output).make_call();
-            #define set_target_temp(x) water_temp_call.set_value(x);water_temp_call.perform();ESP_LOGD("set_target_temp", "target set to: %f", x);
+            #define set_target_temp(x) water_temp_call.set_value(round(x));water_temp_call.perform();ESP_LOGD("set_target_temp", "target set to: %f", round(x));
 
             timer += dt;
             ESP_LOGD(state_string[state], "Since: %ds", timer - statechange);

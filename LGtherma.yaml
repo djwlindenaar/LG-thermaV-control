@@ -86,7 +86,7 @@ script:
           //If oat above max value, clamp to maximum value
           oat = id(stooklijn_start_temp).state;
         }
-        id(stooklijn_target) = (int)round((Z * (oat-id(stooklijn_start_temp).state))+id(stooklijn_min_wtemp).state);
+        id(stooklijn_target) = round(((Z * (oat-id(stooklijn_start_temp).state))+id(stooklijn_min_wtemp).state)*10)/10.0;
         //Add stooklijn offset
         id(stooklijn_target) = id(stooklijn_target) + id(wp_stooklijn_offset).state;
         //Make sure target is not above max water or below minimum temp
