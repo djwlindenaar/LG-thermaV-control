@@ -30,24 +30,6 @@ logger:
 #  level: INFO
 #  level: VERBOSE
 
-globals:
-  - id: stooklijn_target
-    type: float
-    restore_value: no
-    initial_value: '27'
-  - id: minimum_run_time_passed
-    type: bool
-    restore_value: no
-    initial_value: 'false'
-  - id: thermostat_timer
-    type: int
-    restore_value: no
-    initial_value: "0"
-  - id: switch_off_requested
-    type: bool
-    restore_value: no
-    initial_value: 'false'
-
 # Enable Home Assistant API
 api:
   password: ""
@@ -69,6 +51,28 @@ captive_portal:
 
 #external_components:
 #  - source: my_components
+
+packages:
+  powermeter: !include Powermeter.yaml
+
+globals:
+  - id: stooklijn_target
+    type: float
+    restore_value: no
+    initial_value: '27'
+  - id: minimum_run_time_passed
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: thermostat_timer
+    type: int
+    restore_value: no
+    initial_value: "0"
+  - id: switch_off_requested
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
 script:
   - id: update_stooklijn_target
     then: 
@@ -158,8 +162,6 @@ modbus:
   - id: modbus_lg
     uart_id: uart_modbus_lg
     send_wait_time: 2000ms
-  - id: modbus_pw
-    uart_id: uart_modbus_pw
 
 uart:
   - id: uart_modbus_lg
@@ -167,13 +169,6 @@ uart:
     rx_pin: GPIO22
     baud_rate: 9600
     parity: none
-    data_bits: 8
-    stop_bits: 1
-  - id: uart_modbus_pw
-    tx_pin: GPIO19
-    rx_pin: GPIO18
-    baud_rate: 9600
-    parity: even
     data_bits: 8
     stop_bits: 1
 
@@ -184,12 +179,6 @@ modbus_controller:
     update_interval: 5s #this is our main 'clock' all dependel logic follows this pace
     setup_priority: -10
   
-  - id: pw
-    address: 0x1 # the Modbus device addr
-    modbus_id: modbus_pw
-    update_interval: 5s
-    setup_priority: -10
-
 text_sensor:
   - platform: template
     name: "LG Controller state"
@@ -544,114 +533,6 @@ binary_sensor:
     address: 13
     
 sensor:
-  - platform: modbus_controller
-    modbus_controller_id: pw
-    name: "LG Therma L1 Voltage"
-    register_type: holding
-    address: 0x000E
-    unit_of_measurement: "V"
-    value_type: FP32
-    accuracy_decimals: 1
-  - platform: modbus_controller
-    name: "LG Therma L2 Voltage"
-    modbus_controller_id: pw
-    register_type: holding
-    address: 0x0010
-    unit_of_measurement: "V"
-    value_type: FP32
-    accuracy_decimals: 1
-  - platform: modbus_controller
-    modbus_controller_id: pw
-    name: "LG Therma L3 Voltage"
-    register_type: holding
-    address: 0x0012
-    unit_of_measurement: "V"
-    value_type: FP32
-    accuracy_decimals: 1
-  - platform: modbus_controller
-    modbus_controller_id: pw
-    name: "LG Therma Grid Frequency"
-    register_type: holding
-    address: 0x0014
-    unit_of_measurement: "Hz"
-    value_type: FP32
-    accuracy_decimals: 3
-  - platform: modbus_controller
-    modbus_controller_id: pw
-    name: "LG Therma L1 Current"
-    register_type: holding
-    address: 0x0016
-    unit_of_measurement: "A"
-    value_type: FP32
-    accuracy_decimals: 3
-  - platform: modbus_controller
-    modbus_controller_id: pw
-    name: "LG Therma L2 Current"
-    register_type: holding
-    address: 0x0018
-    unit_of_measurement: "A"
-    value_type: FP32
-    accuracy_decimals: 3
-  - platform: modbus_controller
-    modbus_controller_id: pw
-    name: "LG Therma L3 Current"
-    register_type: holding
-    address: 0x001A
-    unit_of_measurement: "A"
-    value_type: FP32
-    accuracy_decimals: 3
-  - platform: modbus_controller
-    modbus_controller_id: pw
-    name: "LG Therma Total Active Power"
-    register_type: holding
-    address: 0x001C
-    unit_of_measurement: "W"
-    value_type: FP32
-    accuracy_decimals: 0
-    filters:
-      - multiply: 1000
-  - platform: modbus_controller
-    modbus_controller_id: pw
-    name: "LG Therma L1 Active Power"
-    register_type: holding
-    address: 0x001E
-    unit_of_measurement: "W"
-    value_type: FP32
-    accuracy_decimals: 0
-    filters:
-      - multiply: 1000
-  - platform: modbus_controller
-    modbus_controller_id: pw
-    name: "LG Therma L2 Active Power"
-    register_type: holding
-    address: 0x0020
-    unit_of_measurement: "W"
-    value_type: FP32
-    accuracy_decimals: 0
-    filters:
-      - multiply: 1000
-  - platform: modbus_controller
-    modbus_controller_id: pw
-    name: "LG Therma L3 Active Power"
-    register_type: holding
-    address: 0x0022
-    unit_of_measurement: "W"
-    value_type: FP32
-    accuracy_decimals: 0
-    filters:
-      - multiply: 1000
-  - platform: modbus_controller
-    modbus_controller_id: pw
-    name: "LG Therma Energy Consumed"
-    register_type: holding
-    address: 0x0100
-    unit_of_measurement: "kWh"
-    value_type: FP32
-    accuracy_decimals: 3
-    state_class: total
-    device_class: energy
-    filters:
-      - median:
 
 
 
