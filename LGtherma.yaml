@@ -8,8 +8,6 @@ esphome:
     then:
       lambda: !lambda |-
           //Set initial states
-          id(minimum_run_time_passed) = false;
-          id(switch_off_requested) = false;
 
 esp32:
   board: nodemcu-32s
@@ -60,18 +58,10 @@ globals:
     type: float
     restore_value: no
     initial_value: '27'
-  - id: minimum_run_time_passed
-    type: bool
-    restore_value: no
-    initial_value: 'false'
   - id: thermostat_timer
     type: int
     restore_value: no
     initial_value: "0"
-  - id: switch_off_requested
-    type: bool
-    restore_value: no
-    initial_value: 'false'
 
 script:
   - id: update_stooklijn_target
@@ -100,26 +90,6 @@ script:
         ESP_LOGD("stooklijn", "New stooklijn target value (after correction): %f", id(stooklijn_target));
         //Publish new stooklijn value to watertemp value sensor
         id(watertemp_target).publish_state(id(stooklijn_target));
-  - id: minimum_run_time_script
-    mode: restart
-    then:
-      - lambda: |-
-          ESP_LOGD("thermostat-delay", "minimum_run_time_script called, wait for the compressor to run.");
-      - wait_until: 
-          condition:
-            binary_sensor.is_on: compressor_running
-      - lambda: |-
-          ESP_LOGD("thermostat-delay", "minimum_run_time_script compressor runnning, starting delay timer.");
-      - delay: !lambda "return id(minimum_run_time).state*60*1000;"
-      - lambda: |-
-          //Set minum run time passed to true, so that HP can switch off when thermostat switches off (after delay)
-          ESP_LOGD("thermostat-delay", "minimum_run_time_script delay passed. switch_off_requested: %d",id(switch_off_requested));
-          id(minimum_run_time_passed) = true;
-          //Check if switch off was already requested
-          if(id(switch_off_requested)){
-            //Switch off
-            id(thermostat_wp_heat).turn_off();
-          }
   - id: thermostaat
     mode: restart
     then: 
@@ -128,6 +98,7 @@ script:
           static bool switched = false;
           ESP_LOGD("Thermostaat", "T: %f, %f, ref: %f", id(huiskamer_lucht).state, (id(huiskamer_lucht).state-19.0), id(thermostat_wp_heat).state?0.2:0.0);
           ESP_LOGD("Thermostaat", "switched: %s, timer: %d", switched?"True":"False", id(thermostat_timer));
+
           if ((id(huiskamer_lucht).state-id(huiskamer_thermostaat_target).state) <= (id(thermostat_wp_heat).state?0.2:0.0)) {
             ESP_LOGD("Thermostaat", "Thermostaat aan");
             if (!(id(thermostat_wp_heat).state)) {
@@ -137,7 +108,6 @@ script:
               }
               if (id(thermostat_timer)==0) {
                 id(thermostat_wp_heat).turn_on();
-                id(switch_off_requested) = false;
               }
             } else switched = false;
           } else {
@@ -149,8 +119,7 @@ script:
               }
 
               if (id(thermostat_timer)==0) {
-                id(switch_off_requested) = true;
-                if (id(minimum_run_time_passed) || (!id(compressor_running).state)) id(thermostat_wp_heat).turn_off();
+                id(thermostat_wp_heat).turn_off();
               }
             } else switched = false;
           }
@@ -450,22 +419,6 @@ switch:
     name: "WP Heat"
     id: thermostat_wp_heat
     optimistic: true
-    turn_off_action:
-      then:
-        - lambda: |-
-            ESP_LOGD("thermostat_wp_heat", "Thermostat turned off");
-            id(minimum_run_time_script).stop();
-        #- switch.turn_off: modbus_enable_heat
-        #- delay: 10s
-        #- switch.turn_on: modbus_enable_heat
-    turn_on_action:
-      then:
-        - lambda: |-
-            ESP_LOGD("thermostat_wp_heat", "Thermostat turned on");
-            id(minimum_run_time_passed) = false;
-            id(switch_off_requested) = false;
-            id(minimum_run_time_script).execute();
-        #- switch.turn_on: modbus_enable_heat
 
 
 interval:

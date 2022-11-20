@@ -6,16 +6,16 @@
             static States newstate = Idle;
             static uint32_t timer = 0;
             static uint32_t statechange = 0; //timer value upon previous state change
+            static uint32_t compressortime = 0; //timer value on last compressor start
             static uint32_t dt = round(id(state_machine).get_update_interval()/1000);
             auto water_temp_call = id(water_temp_target_output).make_call();
             #define set_target_temp(x) water_temp_call.set_value(round(x));water_temp_call.perform();ESP_LOGD("set_target_temp", "target set to: %f", round(x));
 
             timer += dt;
-            ESP_LOGD(state_string[state], "Since: %ds", timer - statechange);
-            id(lg_controller_state).publish_state(state_string[state]);
 
             switch (state) {
               case Idle:
+              //Nothing is going on, keep checking if something should be going on
                 if (id(thermostat_wp_heat).state) {
                   newstate = Starting;
                   id(modbus_enable_heat).turn_on();
@@ -31,16 +31,24 @@
                   id(modbus_enable_heat).turn_on();
                 }
                 break;
+
               case Starting:
+              //we want the compressor to start...
                 if (id(compressor_running).state) {
-                  // apparently the compressor started...
+                  // apparently the compressor started..
+                  compressortime = timer;
                   newstate = EarlyRun;
                   break;
-                } else {
-                  // set temperature high enough so compressor will start
-                  set_target_temp(id(water_temp_aanvoer).state + 3.0);
+                } else if (!id(thermostat_wp_heat).state) {
+                  // the compressor didn't start and the thermostat turned off
+                  newstate = Idle;
+                  break;
                 }
+
+                // set temperature high enough so compressor will start
+                set_target_temp(id(water_temp_aanvoer).state + 3.0);
                 break;
+
               case EarlyRun:
                 if ((timer - statechange) > (15*60)) { // EarlyRun takes at most 15 minutes
                   newstate = Running;
@@ -49,12 +57,15 @@
                   set_target_temp(id(water_temp_aanvoer).state - 3.0);
                 }
                 break;
+
               case Running:
               {
                 float delta = id(water_temp_aanvoer).state - id(stooklijn_target);
+                bool minimum_run_time_passed = ((timer - compressortime) > (id(minimum_run_time).state*60));
+
                 ESP_LOGD(state_string[state], "Delta: %f", delta);
 
-                if (!id(thermostat_wp_heat).state) {
+                if ((!id(thermostat_wp_heat).state) && minimum_run_time_passed) {
                   id(modbus_enable_heat).turn_off();
                   set_target_temp(20.0);
                   newstate = Stopping;
@@ -90,6 +101,9 @@
               statechange = timer;
             }
 
+            ESP_LOGD(state_string[state], "Since: %ds", timer - statechange);
+            if (id(compressor_running).state) ESP_LOGD(state_string[state], "Compressor running for: %ds", timer - compressortime);
+            id(lg_controller_state).publish_state(state_string[state]);
 
             return;
 
