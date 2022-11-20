@@ -14,13 +14,15 @@
             timer += dt;
             if (timer < 60) { // we just got booted, let's take some time to figure out what's happening before taking action
               if (id(compressor_running).state) {
-                state = Running;
+                newstate = state = Running;
               } else {
                 if (id(water_temp_target_output).state > 20)
-                  state = Starting;
+                  newstate = state = Starting;
                 else
-                  state = Idle;
+                  newstate = state = Idle;
               }
+
+              ESP_LOGD(state_string[state], "Since: %ds", timer - statechange);
               return;
             }
 
@@ -71,10 +73,11 @@
 
               case Running:
               {
-                float delta = id(water_temp_aanvoer).state - id(stooklijn_target);
+                double target = id(stooklijn_target) + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), -2.0, 2.0);
+                double delta = id(water_temp_aanvoer).state - target;
                 bool minimum_run_time_passed = ((timer - compressortime) > (id(minimum_run_time).state*60));
 
-                ESP_LOGD(state_string[state], "Delta: %f", delta);
+                ESP_LOGD(state_string[state], "Delta: %f, Stooklijn target: %f, target: %f", delta, id(stooklijn_target), target);
 
                 if ((!id(thermostat_wp_heat).state) && minimum_run_time_passed) {
                   id(modbus_enable_heat).turn_off();
@@ -84,10 +87,12 @@
                 }
 
                 if (delta > 0) { //if the temperature is overshooting, pull down by reducing the target. But never lower than hysteresis below actual...
-                  set_target_temp(max(float(id(water_temp_aanvoer).state - 3.0), float(id(stooklijn_target) - delta)));
+                  set_target_temp(max((id(water_temp_aanvoer).state - 3.0), (target - delta)));
                 } else {
-                  set_target_temp(id(stooklijn_target));
+                  set_target_temp(target);
                 }
+                //Publish new stooklijn value to watertemp value sensor
+                id(watertemp_target).publish_state(target);
               }
               break;
               case Stopping:

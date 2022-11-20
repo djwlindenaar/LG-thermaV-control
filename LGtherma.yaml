@@ -90,7 +90,7 @@ script:
   
         ESP_LOGD("stooklijn", "New stooklijn target value (after correction): %f", id(stooklijn_target));
         //Publish new stooklijn value to watertemp value sensor
-        id(watertemp_target).publish_state(id(stooklijn_target));
+        //id(watertemp_target).publish_state(id(stooklijn_target));
   - id: thermostaat
     mode: restart
     then: 
@@ -157,6 +157,16 @@ number:
     set_action:
       then:
         script.execute: thermostaat
+  - platform: template
+    name: "Thermostat error gain"
+    id: thermostat_error_gain
+    min_value: 0
+    max_value: 20
+    initial_value: 10
+    step: 1
+    restore_value: yes
+    unit_of_measurement: "°C/°C"
+    optimistic: true
   - platform: template
     id: stooklijn_min_oat
     name: "Stooklijn Minimum Buitentemperatuur"
@@ -236,6 +246,7 @@ switch:
   - platform: template
     name: "WP Heat"
     id: thermostat_wp_heat
+    restore_state: yes
     optimistic: true
 
 
@@ -271,9 +282,20 @@ sensor:
     id: watertemp_target
     unit_of_measurement: "°C"
     update_interval: 60s
-    lambda: |-
-        return id(stooklijn_target);
+    #lambda: |-
+    #    //return id(stooklijn_target);
 
+  - platform: template
+    name: "Thermostat error"
+    id: thermostat_error
+    unit_of_measurement: "°C"
+    update_interval: 5s
+    lambda: |-
+        return (id(huiskamer_thermostaat_target).state - id(huiskamer_lucht).state); // e = ref - measured
+    filters:
+      - sliding_window_moving_average:
+          window_size: 120
+          send_every: 1
 
 
   - platform: wifi_signal
