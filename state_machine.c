@@ -12,6 +12,17 @@
             #define set_target_temp(x) water_temp_call.set_value(round(x));water_temp_call.perform();ESP_LOGD("set_target_temp", "target set to: %f", round(x));
 
             timer += dt;
+            if (timer < 60) { // we just got booted, let's take some time to figure out what's happening before taking action
+              if (id(compressor_running).state) {
+                state = Running;
+              } else {
+                if (id(water_temp_target_output).state > 20)
+                  state = Starting;
+                else
+                  state = Idle;
+              }
+              return;
+            }
 
             switch (state) {
               case Idle:

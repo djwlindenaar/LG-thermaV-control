@@ -125,10 +125,6 @@ script:
             } else switched = false;
           }
 
-
-
-
-  
 text_sensor:
   - platform: template
     name: "LG Controller state"

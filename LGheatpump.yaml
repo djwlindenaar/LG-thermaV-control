@@ -16,7 +16,7 @@ modbus_controller:
   - id: lg
     address: 0x2 # the Modbus device addr
     modbus_id: modbus_lg
-    update_interval: 5s #this is our main 'clock' all dependel logic follows this pace
+    update_interval: 5s 
     setup_priority: -10
 
 number:
