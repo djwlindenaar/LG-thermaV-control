@@ -297,6 +297,18 @@ sensor:
           window_size: 120
           send_every: 1
 
+  - platform: template
+    name: "Temp20 filtered"
+    id: temp20_filtered
+    unit_of_measurement: "°C"
+    update_interval: 20s
+    lambda: |-
+        return (id(temp20).state);
+    filters:
+      - sliding_window_moving_average:
+          window_size: 30
+          send_every: 1
+
 
   - platform: wifi_signal
     name: "${device_name} WiFi Signal"

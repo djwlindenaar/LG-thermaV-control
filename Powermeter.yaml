@@ -79,6 +79,7 @@ sensor:
   - platform: modbus_controller
     modbus_controller_id: pw
     name: "LG Therma Total Active Power"
+    id: lg_total_active_power
     register_type: holding
     address: 0x001C
     unit_of_measurement: "W"

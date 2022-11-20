@@ -44,7 +44,6 @@
                   id(modbus_enable_heat).turn_on();
                 }
                 break;
-
               case Starting:
               //we want the compressor to start...
                 if (id(compressor_running).state) {
@@ -61,8 +60,9 @@
                 // set temperature high enough so compressor will start
                 set_target_temp(id(water_temp_aanvoer).state + 3.0);
                 break;
-
               case EarlyRun:
+              // Heatpump operates along a predefined behavior. Just wait until it's done and keep the target as low as possible to limit overshoot
+                id(modbus_set_silent_mode).turn_off(); //silent mode off during start (is this right? Might cause bigger startup overshoot
                 if ((timer - statechange) > (15*60)) { // EarlyRun takes at most 15 minutes
                   newstate = Running;
                   break;
@@ -70,32 +70,44 @@
                   set_target_temp(id(water_temp_aanvoer).state - 3.0);
                 }
                 break;
-
               case Running:
-              {
-                double target = id(stooklijn_target) + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), -2.0, 2.0);
-                double delta = id(water_temp_aanvoer).state - target;
-                bool minimum_run_time_passed = ((timer - compressortime) > (id(minimum_run_time).state*60));
-
-                ESP_LOGD(state_string[state], "Delta: %f, Stooklijn target: %f, target: %f", delta, id(stooklijn_target), target);
-
-                if ((!id(thermostat_wp_heat).state) && minimum_run_time_passed) {
-                  id(modbus_enable_heat).turn_off();
-                  set_target_temp(20.0);
-                  newstate = Stopping;
-                  break;
+              // Main Running behaviors
+                {
+                  double target = id(stooklijn_target) + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), -2.0, 2.0);
+                  double delta = id(water_temp_aanvoer).state - target;
+                  bool minimum_run_time_passed = ((timer - compressortime) > (id(minimum_run_time).state*60));
+  
+                  ESP_LOGD(state_string[state], "Delta: %f, Stooklijn target: %f, target: %f", delta, id(stooklijn_target), target);
+  
+                  if ((!id(thermostat_wp_heat).state) && minimum_run_time_passed) {
+                    id(modbus_enable_heat).turn_off();
+                    set_target_temp(20.0);
+                    newstate = Stopping;
+                    break;
+                  }
+  
+                  if (delta > 0) { //if the temperature is overshooting, pull down by reducing the target. But never lower than hysteresis below actual...
+                    set_target_temp(max((id(water_temp_aanvoer).state - 3.0), (target - delta)));
+                  } else {
+                    set_target_temp(target);
+                  }
+                  //Publish new stooklijn value to watertemp value sensor
+                  id(watertemp_target).publish_state(target);
+  
+                  //Silent mode logic. 
+                  if ((id(lg_total_active_power).state > 1200) || (id(temp20_filtered).state < -0.0))
+                    // high power -- efficiency gain is not significant, then COP is better with silent mode off
+                    // temp20 -- if the evaporator is freezing, silent mode off helps
+                    ESP_LOGD(state_string[state], "silent mode off: Power %f, temp20: %f", id(lg_total_active_power).state, id(temp20_filtered).state);
+                    id(modbus_set_silent_mode).turn_off();
+                  if ((id(lg_total_active_power).state < 1000) && (id(temp20_filtered).state > 1.0))
+                    // low power -- efficiency gain is interesting, but only if the evaporator is not close to freezing
+                    ESP_LOGD(state_string[state], "silent mode on: Power %f, temp20: %f", id(lg_total_active_power).state, id(temp20_filtered).state);
+                    id(modbus_set_silent_mode).turn_on();
                 }
-
-                if (delta > 0) { //if the temperature is overshooting, pull down by reducing the target. But never lower than hysteresis below actual...
-                  set_target_temp(max((id(water_temp_aanvoer).state - 3.0), (target - delta)));
-                } else {
-                  set_target_temp(target);
-                }
-                //Publish new stooklijn value to watertemp value sensor
-                id(watertemp_target).publish_state(target);
-              }
-              break;
+                break;
               case Stopping:
+              // We want the heatpump to shut down. heat/cool should be off, target temp at minimum (20C)
                 if (!id(compressor_running).state) {
                   newstate = Afterrun;
                   id(modbus_enable_heat).turn_on();
@@ -103,15 +115,16 @@
                 }
                 break;
               case Afterrun:
+              // run the waterpump for a while, allow the heatpump to do that by heat/cool enabled.
                 if ((timer - statechange) > (30*60) || (id(thermostat_wp_heat).state)) {
                   newstate = Idle;
                   break;
                 }
-
               default:
                 break;
             }
 
+            // if the state is updated, handle that.
             if (state != newstate) {
               state = newstate;
               statechange = timer;
