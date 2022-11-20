@@ -129,6 +129,7 @@ text_sensor:
   - platform: template
     name: "LG Controller state"
     id: lg_controller_state
+    update_interval: never
 
 number:
   - platform: template
