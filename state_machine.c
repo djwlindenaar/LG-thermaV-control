@@ -95,15 +95,17 @@
                   id(watertemp_target).publish_state(target);
   
                   //Silent mode logic. 
-                  if ((id(lg_total_active_power).state > 1200) || (id(temp20_filtered).state < -0.0))
+                  if ((id(lg_total_active_power).state > 1200) || (id(temp20_filtered).state < -0.0)) {
                     // high power -- efficiency gain is not significant, then COP is better with silent mode off
                     // temp20 -- if the evaporator is freezing, silent mode off helps
                     ESP_LOGD(state_string[state], "silent mode off: Power %f, temp20: %f", id(lg_total_active_power).state, id(temp20_filtered).state);
                     id(modbus_set_silent_mode).turn_off();
-                  if ((id(lg_total_active_power).state < 1000) && (id(temp20_filtered).state > 1.0))
+                  }
+                  if ((id(lg_total_active_power).state < 1000) && (id(temp20_filtered).state > 1.0)) {
                     // low power -- efficiency gain is interesting, but only if the evaporator is not close to freezing
                     ESP_LOGD(state_string[state], "silent mode on: Power %f, temp20: %f", id(lg_total_active_power).state, id(temp20_filtered).state);
                     id(modbus_set_silent_mode).turn_on();
+                  }
                 }
                 break;
               case Stopping:
