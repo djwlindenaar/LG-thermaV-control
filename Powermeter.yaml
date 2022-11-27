@@ -130,4 +130,11 @@ sensor:
     device_class: energy
     filters:
       - median:
-
+    lambda: !lambda |-
+      static float oldx = -1.0;
+      if (x<oldx) {
+        ESP_LOGD("LG_Therma_energy_consumed", "Got bad value %f, old value %f", x, oldx);
+        return oldx;
+      }
+      oldx = x;
+      return x;
