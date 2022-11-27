@@ -39,11 +39,12 @@ wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
   domain: ".home.lan"
+  power_save_mode: None
 
   # Enable fallback hotspot (captive portal) in case wifi connection fails
   ap:
     ssid: "Lgtherma Fallback Hotspot"
-    password: "7UtG4JANJliQ"
+    password: ""
 
 captive_portal:
 
