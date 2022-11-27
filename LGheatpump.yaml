@@ -416,6 +416,18 @@ sensor:
     register_type: read
     address: 63
     value_type: U_WORD
+#  - platform: modbus_controller
+#    modbus_controller_id: lg
+#    name: "Product Group"
+#    register_type: read
+#    address: 0x270d
+#    value_type: U_WORD
+#  - platform: modbus_controller
+#    modbus_controller_id: lg
+#    name: "Product Info"
+#    register_type: read
+#    address: 0x270e
+#    value_type: U_WORD
 
   - platform: modbus_controller
     modbus_controller_id: lg
