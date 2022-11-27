@@ -18,6 +18,7 @@ modbus_controller:
     modbus_id: modbus_pw
     update_interval: 5s
     setup_priority: -10
+    command_throttle: 200ms
 
 sensor:
   - platform: modbus_controller
