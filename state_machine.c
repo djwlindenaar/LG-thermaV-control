@@ -73,7 +73,7 @@
               case Running:
               // Main Running behaviors
                 {
-                  double target = id(stooklijn_target) + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), -2.0, 2.0);
+                  double target = id(stooklijn_target) + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), -4.0, 4.0);
                   double delta = id(water_temp_aanvoer).state - target;
                   bool minimum_run_time_passed = ((timer - compressortime) > (id(minimum_run_time).state*60));
   

@@ -98,10 +98,10 @@ script:
       - delay: 1s
       - lambda: !lambda |-
           static bool switched = false;
-          ESP_LOGD("Thermostaat", "T: %f, %f, ref: %f", id(huiskamer_lucht).state, (id(huiskamer_lucht).state-19.0), id(thermostat_wp_heat).state?0.2:0.0);
+          ESP_LOGD("Thermostaat", "T: %f, %f, ref: %f", id(huiskamer_lucht).state, (id(huiskamer_lucht).state-19.0), id(thermostat_wp_heat).state?0.5:0.0);
           ESP_LOGD("Thermostaat", "switched: %s, timer: %d", switched?"True":"False", id(thermostat_timer));
 
-          if ((id(huiskamer_lucht).state-id(huiskamer_thermostaat_target).state) <= (id(thermostat_wp_heat).state?0.2:0.0)) {
+          if ((id(huiskamer_lucht).state-id(huiskamer_thermostaat_target).state) <= (id(thermostat_wp_heat).state?0.5:0.0)) {
             ESP_LOGD("Thermostaat", "Thermostaat aan");
             if (!(id(thermostat_wp_heat).state)) {
               if (!switched) {
