@@ -1,7 +1,7 @@
           lambda: !lambda |-
             static const char*state_string[] =
-                       {"Idle", "Starting", "EarlyRun", "Running", "Stopping", "Afterrun"};
-            enum States {Idle ,  Starting ,  EarlyRun ,  Running ,  Stopping ,  Afterrun};
+                       {"Idle", "Starting", "EarlyRun", "Running", "Defrosting", "Stopping", "Afterrun"};
+            enum States {Idle ,  Starting ,  EarlyRun ,  Running ,  Defrosting ,  Stopping ,  Afterrun};
             static States state = Idle;
             static States newstate = Idle;
             static uint32_t timer = 0;
@@ -70,6 +70,12 @@
                   set_target_temp(id(water_temp_aanvoer).state - 3.0);
                 }
                 break;
+              case Defrosting:
+              // To identify defrost has (recently) happened
+                if ((timer - statechange) > (8*60)) { // 8 minutes
+                  newstate = Running;
+                  // no break, because the logic is still in Running
+                }
               case Running:
               // Main Running behaviors
                 {
@@ -98,6 +104,11 @@
                     newstate = Stopping;
                     break;
                   }
+
+                  if (id(defrosting).state) {
+                    newstate = Defrosting;
+                    // No break, because the logic while defrosting is just Running logic
+                  }
   
                   if (delta > 0) { //if the temperature is overshooting, pull down by reducing the target. But never lower than hysteresis below actual...
                     set_target_temp(max((id(water_temp_aanvoer).state - 3.0), (target - delta)));
@@ -114,7 +125,7 @@
                     ESP_LOGD(state_string[state], "silent mode off: Power %f, temp20: %f", id(lg_total_active_power).state, id(temp20_filtered).state);
                     id(modbus_set_silent_mode).turn_off();
                   }
-                  if ((id(lg_total_active_power).state < 1000) && (id(temp20_filtered).state > 1.0)) {
+                  if ((id(lg_total_active_power).state < 1000) && (id(temp20_filtered).state > 0.0) && (state != Defrosting)) {
                     // low power -- efficiency gain is interesting, but only if the evaporator is not close to freezing
                     ESP_LOGD(state_string[state], "silent mode on: Power %f, temp20: %f", id(lg_total_active_power).state, id(temp20_filtered).state);
                     id(modbus_set_silent_mode).turn_on();
