@@ -110,8 +110,9 @@
                     // No break, because the logic while defrosting is just Running logic
                   }
   
-                  if (delta > 0) { //if the temperature is overshooting, pull down by reducing the target. But never lower than hysteresis below actual...
-                    set_target_temp(max((id(water_temp_aanvoer).state - 3.0), (target - delta)));
+                  if (delta > 0) { //if the temperature is overshooting, don't pull down by reducing the target. But never lower than hysteresis below actual...
+                    //set_target_temp(max((id(water_temp_aanvoer).state - 3.0), (target - delta)));
+                    set_target_temp(max((id(water_temp_aanvoer).state - 3.0), (target)));
                   } else {
                     set_target_temp(target);
                   }
