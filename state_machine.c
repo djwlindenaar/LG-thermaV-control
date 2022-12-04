@@ -73,11 +73,24 @@
               case Running:
               // Main Running behaviors
                 {
-                  double target = id(stooklijn_target) + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), -4.0, 4.0);
+                  // correct the stooklijn target based on flow rate. I noticed that the outflow temperature target of the heatpump
+                  // is the same irrespective of the amount of flow. This doesn't make sense because at half the flow, half the heat
+                  // is transferred (this is not completely accurate, but close enough).
+
+                  // TODO: Argh! I should make the step to control the actual physics instead of this indirect stuff! The only thing
+                  // that really matters is the temperature of the floor surface. That determines the heat transfer into the room and
+                  // compensates the heat loss out of the house. With the high heat capacity of my floor that could be done much better!
+
+                  // concept it that we correct the delta between stooklijn target and room temp target by the flow rate. My stooklijn
+                  // is more or less accurate for the minimal flow rate of 17.5 lpm, so that's the baseline flow. (i.e. the stooklijn
+                  // temperatures are correct at 17.5 lpm, e.g. at 35 lpm, the delta is halved.
+                  double corrected_stooklijn = (id(stooklijn_target) - id(huiskamer_thermostaat_target).state) * 17.5 / id(current_flow_rate).state + id(huiskamer_thermostaat_target).state;
+
+                  double target = corrected_stooklijn + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), -4.0, 4.0);
                   double delta = id(water_temp_aanvoer).state - target;
                   bool minimum_run_time_passed = ((timer - compressortime) > (id(minimum_run_time).state*60));
   
-                  ESP_LOGD(state_string[state], "Delta: %f, Stooklijn target: %f, target: %f", delta, id(stooklijn_target), target);
+                  ESP_LOGD(state_string[state], "Delta: %f, Stooklijn: %f, corrected stooklijn: %f, target: %f", delta, id(stooklijn_target), corrected_stooklijn, target);
   
                   if ((!id(thermostat_wp_heat).state) && minimum_run_time_passed) {
                     id(modbus_enable_heat).turn_off();
