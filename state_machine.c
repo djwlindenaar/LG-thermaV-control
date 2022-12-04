@@ -92,7 +92,7 @@
                   // temperatures are correct at 17.5 lpm, e.g. at 35 lpm, the delta is halved.
                   double corrected_stooklijn = (id(stooklijn_target) - id(huiskamer_thermostaat_target).state) * 17.5 / id(current_flow_rate).state + id(huiskamer_thermostaat_target).state;
 
-                  double target = corrected_stooklijn + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), -4.0, 4.0);
+                  double target = corrected_stooklijn + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), -10.0, 4.0);
                   double delta = id(water_temp_aanvoer).state - target;
                   bool minimum_run_time_passed = ((timer - compressortime) > (id(minimum_run_time).state*60));
   
