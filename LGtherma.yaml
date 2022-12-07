@@ -310,6 +310,17 @@ sensor:
       - sliding_window_moving_average:
           window_size: 30
           send_every: 1
+  - platform: template
+    name: "Temp18 filtered"
+    id: temp18_filtered
+    unit_of_measurement: "°C"
+    update_interval: 20s
+    lambda: |-
+        return (id(temp18).state);
+    filters:
+      - sliding_window_moving_average:
+          window_size: 30
+          send_every: 1
 
 
   - platform: wifi_signal
