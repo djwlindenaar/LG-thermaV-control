@@ -151,7 +151,7 @@ number:
     id: huiskamer_thermostaat_target
     min_value: 10
     max_value: 25
-    initial_value: 19
+    initial_value: 20
     step: 1
     restore_value: yes
     unit_of_measurement: "°C"
@@ -202,7 +202,7 @@ number:
     max_value: 35
     step: 1
     restore_value: yes
-    initial_value: 22
+    initial_value: 20
     unit_of_measurement: "°C"
     optimistic: true
     set_action:
@@ -215,7 +215,7 @@ number:
     max_value: 20
     step: 1
     restore_value: yes
-    initial_value: 15
+    initial_value: 19
     unit_of_measurement: "°C"
     optimistic: true
     set_action:
