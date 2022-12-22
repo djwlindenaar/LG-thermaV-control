@@ -274,10 +274,10 @@ sensor:
     on_value:
       then: 
         script.execute: thermostaat
-  - platform: homeassistant
-    name: "Huiskamer vloer"
-    id: huiskamer_vloer
-    entity_id: sensor.huiskamer_vloer
+#  - platform: homeassistant
+#    name: "Huiskamer vloer"
+#    id: huiskamer_vloer
+#    entity_id: sensor.huiskamer_vloer
 
   - platform: template
     name: "Stooklijn Watertemp Target"
