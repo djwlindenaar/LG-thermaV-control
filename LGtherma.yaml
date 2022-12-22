@@ -186,7 +186,7 @@ number:
     id: stooklijn_max_wtemp
     name: "Stooklijn Maximum Watertemperatuur"
     min_value: 20
-    max_value: 60
+    max_value: 41 #set to lower max temp (not 60) to prevent floor damage
     step: 1
     restore_value: yes
     initial_value: 35
