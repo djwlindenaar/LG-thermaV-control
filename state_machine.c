@@ -3,6 +3,8 @@
             enum States {Idle ,  Starting ,  EarlyRun ,  Running ,  Defrosting ,  Stopping ,  Afterrun};
             static States state = Idle;
             static States newstate = Idle;
+            static float water_hyst_pos = 4.0; //still to be replaced by LG modbus state if we find how to connect this
+            static float water_hyst_neg = -4.0; //still to be replaced by LG modbus state if we find how to connect this
             static uint32_t timer = 0;
             static uint32_t statechange = 0; //timer value upon previous state change
             static uint32_t compressortime = 0; //timer value on last compressor start
@@ -62,16 +64,19 @@
                 }
 
                 // set temperature high enough so compressor will start
-                set_target_temp(id(water_temp_aanvoer).state + 3.0);
+                //set_target_temp(id(water_temp_aanvoer).state + 3.0); // old fixed hysteresis
+                set_target_temp(id(water_temp_aanvoer).state + (water_hyst_pos - 1.0));
                 break;
               case EarlyRun:
               // Heatpump operates along a predefined behavior. Just wait until it's done and keep the target as low as possible to limit overshoot
-                id(modbus_set_silent_mode).turn_off(); //silent mode off during start (is this right? Might cause bigger startup overshoot
+                //id(modbus_set_silent_mode).turn_off(); //silent mode off during start (is this right? Might cause bigger startup overshoot
+                id(modbus_set_silent_mode).turn_on(); // turn silent mode on at start, to get less overshoot
                 if ((timer - statechange) > (15*60)) { // EarlyRun takes at most 15 minutes
                   newstate = Running;
                   break;
                 } else {
-                  set_target_temp(id(water_temp_aanvoer).state - 3.0);
+                  // set_target_temp(id(water_temp_aanvoer).state - 3.0); // old fixed hysteresis
+                  set_target_temp(id(water_temp_aanvoer).state + (water_hyst_neg + 1.0));
                 }
                 break;
               case Defrosting:
@@ -116,7 +121,8 @@
   
                   if (delta > 0) { //if the temperature is overshooting, don't pull down by reducing the target. But never lower than hysteresis below actual...
                     //set_target_temp(max((id(water_temp_aanvoer).state - 3.0), (target - delta)));
-                    set_target_temp(max((id(water_temp_aanvoer).state - 3.0), (target)));
+                    //set_target_temp(max((id(water_temp_aanvoer).state - 3.0), (target)));// old fixed hysteresis
+                    set_target_temp(max((id(water_temp_aanvoer).state + (water_hyst_neg + 1.0)), (target)));
                   } else {
                     set_target_temp(target);
                   }
@@ -158,6 +164,7 @@
             // if the state is updated, handle that.
             if (state != newstate) {
               state = newstate;
+              ESP_LOGD("new state is %f", newstate)
               statechange = timer;
             }
 
