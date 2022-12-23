@@ -62,10 +62,10 @@ script:
       lambda: !lambda |-
         float oat = id(buiten_temp).state;
         //Heating
-        //Formula is wTemp = -Z x (OAT-stooklijn_min_wtemp) + stooklijn_start_temp
+        //Formula is wTemp = -Z x (OAT-stooklijn_start_temp) + stooklijn_min_wtemp
         //Formula to calculate -Z = ((stooklijn_max_wtemp-stooklijn_min_wtemp)) / (stooklijn_min_oat - stooklijn_start_temp))
-        const float Z = ((float)id(stooklijn_max_wtemp).state-(float)id(stooklijn_min_wtemp).state)/( (float)id(stooklijn_min_oat).state - (float)id(stooklijn_start_temp).state);
-        ESP_LOGD("stooklijn", "Stooklijn, working mode is heating, with oat: %f, Z: %f",oat, Z);
+        const float minZ = ((float)id(stooklijn_max_wtemp).state-(float)id(stooklijn_min_wtemp).state)/( (float)id(stooklijn_min_oat).state - (float)id(stooklijn_start_temp).state);
+        ESP_LOGD("stooklijn", "Stooklijn, working mode is heating, with oat: %f, minZ: %f",oat, minZ);
         if(oat < id(stooklijn_min_oat).state) {
           //If oat below minimum oat, clamp to minimum value
           oat = id(stooklijn_min_oat).state;
@@ -73,12 +73,16 @@ script:
           //If oat above max value, clamp to maximum value
           oat = id(stooklijn_start_temp).state;
         }
-        id(stooklijn_target) = round(((Z * (oat-id(stooklijn_start_temp).state))+id(stooklijn_min_wtemp).state)*10)/10.0;
+        id(stooklijn_target) = round(((minZ * (oat-id(stooklijn_start_temp).state))+id(stooklijn_min_wtemp).state)*10)/10.0;
         //Add stooklijn offset
         id(stooklijn_target) = id(stooklijn_target) + id(wp_stooklijn_offset).state;
         //Make sure target is not above max water or below minimum temp
-        if(id(stooklijn_target) > id(stooklijn_max_wtemp).state) id(stooklijn_target) = id(stooklijn_max_wtemp).state;
-        if(id(stooklijn_target) < id(stooklijn_min_wtemp).state) id(stooklijn_target) = id(stooklijn_min_wtemp).state;
+        if(id(stooklijn_target) > id(stooklijn_max_wtemp).state) {
+          id(stooklijn_target) = id(stooklijn_max_wtemp).state;
+          }
+        if(id(stooklijn_target) < id(stooklijn_min_wtemp).state) {
+          id(stooklijn_target) = id(stooklijn_min_wtemp).state;
+        }
   
         ESP_LOGD("stooklijn", "New stooklijn target value (after correction): %f", id(stooklijn_target));
         //Publish new stooklijn value to watertemp value sensor
@@ -96,7 +100,7 @@ script:
             if (!(id(thermostat_wp_heat).state)) {
               if (!switched) {
                 switched = true;
-                id(thermostat_timer) = 15;
+                id(thermostat_timer) = 15; // minimum time thermostat heat ask before heat ask turned on?
               }
               if (id(thermostat_timer)==0) {
                 id(thermostat_wp_heat).turn_on();
@@ -107,7 +111,7 @@ script:
             if ((id(thermostat_wp_heat).state)) {
               if (!switched) {
                 switched = true;
-                id(thermostat_timer) = 15;
+                id(thermostat_timer) = 15; // minimum time thermostat stop-heat ask before heat ask turned on?
               }
               if (id(thermostat_timer)==0) {
                 id(thermostat_wp_heat).turn_off();
