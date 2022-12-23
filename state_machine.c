@@ -5,6 +5,8 @@
             static States newstate = Idle;
             static float water_hyst_pos = 4.0; //still to be replaced by LG modbus state if we find how to connect this
             static float water_hyst_neg = -4.0; //still to be replaced by LG modbus state if we find how to connect this
+            static float max_stooklijn_correction_pos = 3.0;
+            static float max_stooklijn_correction_neg = -5.0;
             static uint32_t timer = 0;
             static uint32_t statechange = 0; //timer value upon previous state change
             static uint32_t compressortime = 0; //timer value on last compressor start
@@ -34,8 +36,8 @@
                   newstate = Starting;
                   id(modbus_enable_heat).turn_on();
                   break;
-                //} //replaced by else turn on --> dus gaat nu always on, tot er vloersensor is
-                // vloersensor check weg gecomment ivm missende sensor. system always-on
+                } //weghalen bij always on else if hieronder
+                // vloersensor check weg gecomment ivm missende sensor. 
                 // when Idle, we run the pump to circulate warm water, if that's useful
                 //if ((id(huiskamer_vloer).state<20.0) || // vloer is koud, rondpompen heeft weinig zin
                     //(id(huiskamer_lucht).state>id(huiskamer_vloer).state)) { //lucht is warmer dan de vloer, rondpompen heeft weinig zin
@@ -44,11 +46,11 @@
                 //} else {
                   //ESP_LOGD("modbus_enable_heat", "Turned controller on: %f %f", id(huiskamer_vloer).state, id(huiskamer_lucht).state);
                 //}
-                //added new else
-                } else {
-                  ESP_LOGD("modbus_enable_heat", "Turned controller on basis from idle: %f", id(huiskamer_lucht).state);
-                  id(modbus_enable_heat).turn_on();
-                }
+                //option for always on
+                //} else {
+                //  ESP_LOGD("modbus_enable_heat", "Turned controller on basis from idle: %f", id(huiskamer_lucht).state);
+                //  id(modbus_enable_heat).turn_on();
+                //}
                 break;
               case Starting:
               //we want the compressor to start...
@@ -99,17 +101,26 @@
                   // concept it that we correct the delta between stooklijn target and room temp target by the flow rate. My stooklijn
                   // is more or less accurate for the minimal flow rate of 17.5 lpm, so that's the baseline flow. (i.e. the stooklijn
                   // temperatures are correct at 17.5 lpm, e.g. at 35 lpm, the delta is halved.
-                  double corrected_stooklijn = (id(stooklijn_target) - id(huiskamer_thermostaat_target).state) * 17.5 / id(current_flow_rate).state + id(huiskamer_thermostaat_target).state;
 
-                  double target = corrected_stooklijn + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), -10.0, 4.0);
+
+                  //double corrected_stooklijn = (id(stooklijn_target) - id(huiskamer_thermostaat_target).state) * 17.5 / id(current_flow_rate).state + id(huiskamer_thermostaat_target).state;
+                  //removed correction for flow to enable controlling invividual floor heating valves (and thus reduce flow) without influencing other rooms
+                  double corrected_stooklijn = id(stooklijn_target);
+
+                  //double target = corrected_stooklijn + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), -10.0, 4.0);
+                  //including parameter based max adjustments
+                  double target = corrected_stooklijn + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), max_stooklijn_correction_neg, max_stooklijn_correction_pos);
                   double delta = id(water_temp_aanvoer).state - target;
                   bool minimum_run_time_passed = ((timer - compressortime) > (id(minimum_run_time).state*60));
   
                   ESP_LOGD(state_string[state], "Delta: %f, Stooklijn: %f, corrected stooklijn: %f, target: %f", delta, id(stooklijn_target), corrected_stooklijn, target);
   
+                  // turn off heating mode LG if no heat ask & minimum run time passed
                   if ((!id(thermostat_wp_heat).state) && minimum_run_time_passed) {
                     id(modbus_enable_heat).turn_off();
-                    set_target_temp(20.0);
+                    //set_target_temp(20.0); 
+                    //replaced hardcoded 20.0 by minimum parameter
+                    set_target_temp(id(stooklijn_min_wtemp).state); 
                     newstate = Stopping;
                     break;
                   }
