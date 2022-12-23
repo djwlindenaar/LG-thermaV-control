@@ -1,6 +1,5 @@
           lambda: !lambda |-
-            static const char*state_string[] =
-                       {"Idle", "Starting", "EarlyRun", "Running", "Defrosting", "Stopping", "Afterrun"};
+            static const char*state_string[] = {"Idle", "Starting", "EarlyRun", "Running", "Defrosting", "Stopping", "Afterrun"};
             enum States {Idle ,  Starting ,  EarlyRun ,  Running ,  Defrosting ,  Stopping ,  Afterrun};
             static States state = Idle;
             static States newstate = Idle;
@@ -33,16 +32,21 @@
                   newstate = Starting;
                   id(modbus_enable_heat).turn_on();
                   break;
-                }
+                //} //replaced by else turn on --> dus gaat nu always on, tot er vloersensor is
+                // vloersensor check weg gecomment ivm missende sensor. system always-on
                 // when Idle, we run the pump to circulate warm water, if that's useful
-#                if ((id(huiskamer_vloer).state<20.0) || // vloer is koud, rondpompen heeft weinig zin
-#                    (id(huiskamer_lucht).state>id(huiskamer_vloer).state)) { //lucht is warmer dan de vloer, rondpompen heeft weinig zin
-#                  ESP_LOGD("modbus_enable_heat", "Turned controller off: %f %f", id(huiskamer_vloer).state, id(huiskamer_lucht).state);
-#                  id(modbus_enable_heat).turn_off();
-#                } else {
-#                  ESP_LOGD("modbus_enable_heat", "Turned controller on: %f %f", id(huiskamer_vloer).state, id(huiskamer_lucht).state);
-#                  id(modbus_enable_heat).turn_on();
-#                }
+                //if ((id(huiskamer_vloer).state<20.0) || // vloer is koud, rondpompen heeft weinig zin
+                    //(id(huiskamer_lucht).state>id(huiskamer_vloer).state)) { //lucht is warmer dan de vloer, rondpompen heeft weinig zin
+                  //ESP_LOGD("modbus_enable_heat", "Turned controller off: %f %f", id(huiskamer_vloer).state, id(huiskamer_lucht).state);
+                  //id(modbus_enable_heat).turn_off();
+                //} else {
+                  //ESP_LOGD("modbus_enable_heat", "Turned controller on: %f %f", id(huiskamer_vloer).state, id(huiskamer_lucht).state);
+                //}
+                //added new else
+                } else {
+                  ESP_LOGD("modbus_enable_heat", "Turned controller on basis from idle: %f", id(huiskamer_lucht).state);
+                  id(modbus_enable_heat).turn_on();
+                }
                 break;
               case Starting:
               //we want the compressor to start...
@@ -162,4 +166,3 @@
             id(lg_controller_state).publish_state(state_string[state]);
 
             return;
-
