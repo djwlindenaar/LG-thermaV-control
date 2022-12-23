@@ -149,7 +149,7 @@
                 break;
               case Afterrun:
               // run the waterpump for a while, allow the heatpump to do that by heat/cool enabled.
-                if ((timer - statechange) > (30*60) || (id(thermostat_wp_heat).state)) {
+                if ((timer - statechange) > (id(minimum_off_time).state*60) || (id(thermostat_wp_heat).state)) { //updated to use state minimum off time
                   newstate = Idle;
                   break;
                 }
@@ -160,7 +160,6 @@
             // if the state is updated, handle that.
             if (state != newstate) {
               state = newstate;
-              ESP_LOGD("new state is %f", newstate)
               statechange = timer;
             }
 
