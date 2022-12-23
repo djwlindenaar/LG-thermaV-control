@@ -1,20 +1,19 @@
-substitutions:
-  device_name: lgtherma
-
 esphome:
-  name: "${device_name}"
+  name: esp-lgthermav
   on_boot:
     priority: 200
     then:
       lambda: !lambda |-
           //Set initial states
 
+packages:
+  powermeter: !include packages/Powermeter.yaml
+  heatpump: !include packages/LGheatpump.yaml
+
 esp32:
   board: nodemcu-32s
-#  framework:
-#    type: arduino
-#    version: 1.0.6
-#    source: file:///home/daniel/LG/myplatform/arduino-esp32-1.0.6
+  framework:
+    type: arduino
 
 # Enable logging
 logger:
@@ -27,39 +26,31 @@ logger:
     sensor: WARN
 #  level: INFO
 #  level: VERBOSE
-
+  
 # Enable Home Assistant API
 api:
-  password: ""
+  encryption:
+    key: "oG+ZWt2N2Ygupp434iQsTR2CGnvbl4ijGlaBIqyjH44="
 
 ota:
-  password: ""
+  password: "06695494481e1aa7c1fa81e8a189ad57"
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-  domain: ".home.lan"
-  power_save_mode: None
 
   # Enable fallback hotspot (captive portal) in case wifi connection fails
   ap:
-    ssid: "Lgtherma Fallback Hotspot"
-    password: ""
+    ssid: "Esp-Lgthermav Fallback Hotspot"
+    password: "WHfrLUCXND6a"
 
 captive_portal:
-
-#external_components:
-#  - source: my_components
-
-packages:
-  powermeter: !include Powermeter.yaml
-  heatpump: !include LGheatpump.yaml
 
 globals:
   - id: stooklijn_target
     type: float
     restore_value: no
-    initial_value: '27'
+    initial_value: '22'
   - id: thermostat_timer
     type: int
     restore_value: no
@@ -100,7 +91,6 @@ script:
           static bool switched = false;
           ESP_LOGD("Thermostaat", "T: %f, %f, ref: %f", id(huiskamer_lucht).state, (id(huiskamer_lucht).state-id(huiskamer_thermostaat_target).state), id(thermostat_wp_heat).state?0.5:0.0);
           ESP_LOGD("Thermostaat", "switched: %s, timer: %d", switched?"True":"False", id(thermostat_timer));
-
           if ((id(huiskamer_lucht).state-id(huiskamer_thermostaat_target).state) <= (id(thermostat_wp_heat).state?0.5:0.0)) {
             ESP_LOGD("Thermostaat", "Thermostaat aan");
             if (!(id(thermostat_wp_heat).state)) {
@@ -119,7 +109,6 @@ script:
                 switched = true;
                 id(thermostat_timer) = 15;
               }
-
               if (id(thermostat_timer)==0) {
                 id(thermostat_wp_heat).turn_off();
               }
@@ -149,7 +138,7 @@ number:
   - platform: template
     name: "Thermostaat target"
     id: huiskamer_thermostaat_target
-    min_value: 10
+    min_value: 15
     max_value: 25
     initial_value: 20
     step: 1
@@ -231,7 +220,17 @@ number:
     initial_value: 30
     unit_of_measurement: "min"
     optimistic: true
-#  - platform: template
+  - platform: template
+    id: minimum_off_time
+    name: "Minimale after-run tijd"
+    min_value: 0
+    max_value: 30
+    step: 1
+    restore_value: yes
+    initial_value: 15
+    unit_of_measurement: "min"
+    optimistic: true
+#  - platform: template #is deze nog ongebruikt?
 #    id: thermostat_off_delay
 #    name: "thermostat off delay"
 #    min_value: 0
@@ -255,7 +254,7 @@ switch:
 interval:
   - interval: 20s
     id: state_machine
-    then: !include { file: state_machine.c }
+    then: !include { file: packages/state_machine.c }
   - interval: 60s
     then:
       - lambda: |-
@@ -263,21 +262,22 @@ interval:
             id(thermostat_timer)--;
             id(thermostaat).execute();
           }  
-
     
 sensor:
 
-  - platform: homeassistant
-    name: "Huiskamer lucht"
-    id: huiskamer_lucht
-    entity_id: sensor.huiskamer_lucht
-    on_value:
-      then: 
-        script.execute: thermostaat
+# commented: using LG sensor as huiskamer_lucht for now, rename that one in LGheatpump.yaml if using other sensor
+#  - platform: homeassistant
+#    name: "Huiskamer lucht"
+#    id: huiskamer_lucht
+#    entity_id: sensor.huiskamer_lucht
+#    on_value:
+#      then: 
+#        script.execute: thermostaat
 #  - platform: homeassistant
 #    name: "Huiskamer vloer"
 #    id: huiskamer_vloer
 #    entity_id: sensor.huiskamer_vloer
+# unused for now, opletten: ook weggecomment in state_machine.c
 
   - platform: template
     name: "Stooklijn Watertemp Target"
@@ -334,4 +334,3 @@ sensor:
     accuracy_decimals: 1
     filters:
       - multiply: 0.000011574
-
