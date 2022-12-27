@@ -68,27 +68,28 @@ globals:
 script:
   - id: update_stooklijn_target
     then: 
-      lambda: !lambda |-
-        float oat = id(buiten_temp).state;
-        //Heating
-        //Formula is wTemp = -Z x (OAT-stooklijn_start_temp) + stooklijn_min_wtemp
-        //Formula to calculate -Z = ((stooklijn_max_wtemp-stooklijn_min_wtemp)) / (stooklijn_min_oat - stooklijn_start_temp))
-        const float minZ = ((float)id(stooklijn_max_wtemp).state-(float)id(stooklijn_min_wtemp).state)/( (float)id(stooklijn_min_oat).state - (float)id(stooklijn_start_temp).state);
-        ESP_LOGD("stooklijn", "Stooklijn, working mode is heating, with oat: %f, minZ: %f",oat, minZ);
+      - delay: 1s #I get the impression we need this delay to make sure the id(...).state will return the new data...
+      - lambda: !lambda |-
+          float oat = id(buiten_temp).state;
+          //Heating
+          //Formula is wTemp = -Z x (OAT-stooklijn_start_temp) + stooklijn_min_wtemp
+          //Formula to calculate -Z = ((stooklijn_max_wtemp-stooklijn_min_wtemp)) / (stooklijn_min_oat - stooklijn_start_temp))
+          const float minZ = ((float)id(stooklijn_max_wtemp).state-(float)id(stooklijn_min_wtemp).state)/( (float)id(stooklijn_min_oat).state - (float)id(stooklijn_start_temp).state);
+          ESP_LOGD("stooklijn", "Stooklijn, working mode is heating, with oat: %f, minZ: %f",oat, minZ);
 
-        oat = clamp(oat, id(stooklijn_min_oat).state, id(stooklijn_start_temp).state);
+          oat = clamp(oat, id(stooklijn_min_oat).state, id(stooklijn_start_temp).state);
 
-        id(stooklijn_target) = round(((minZ * (oat-id(stooklijn_start_temp).state))+id(stooklijn_min_wtemp).state)*10)/10.0;
+          id(stooklijn_target) = round(((minZ * (oat-id(stooklijn_start_temp).state))+id(stooklijn_min_wtemp).state)*10)/10.0;
 
-        //Add stooklijn offset
-        id(stooklijn_target) = id(stooklijn_target) + id(wp_stooklijn_offset).state;
+          //Add stooklijn offset
+          id(stooklijn_target) = id(stooklijn_target) + id(wp_stooklijn_offset).state;
 
-        //Make sure target is not above max water or below minimum temp
-        id(stooklijn_target) = clamp(id(stooklijn_target), id(stooklijn_min_wtemp).state, id(stooklijn_max_wtemp).state);
+          //Make sure target is not above max water or below minimum temp
+          id(stooklijn_target) = clamp(id(stooklijn_target), id(stooklijn_min_wtemp).state, id(stooklijn_max_wtemp).state);
 
-        ESP_LOGD("stooklijn", "New stooklijn target value (after correction): %f", id(stooklijn_target));
-        //Publish new stooklijn value to watertemp value sensor
-        //id(watertemp_target).publish_state(id(stooklijn_target));
+          ESP_LOGD("stooklijn", "New stooklijn target value (after correction): %f", id(stooklijn_target));
+          //Publish new stooklijn value to watertemp value sensor
+          //id(watertemp_target).publish_state(id(stooklijn_target));
   - id: thermostaat
     mode: restart
     then: 
