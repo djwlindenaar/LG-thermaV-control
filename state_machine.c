@@ -158,7 +158,7 @@
             }
 
             ESP_LOGD(state_string[state], "Since: %ds", timer - statechange);
-            if (id(compressor_running).state) ESP_LOGD(state_string[state], "Compressor running for: %ds", timer - compressortime);
+            if (id(compressor_running).state) ESP_LOGD(state_string[state], "Compressor running for: %02u:%02u:%02u", (timer - compressortime) / 3600, ((timer - compressortime) % 3600) / 60, (timer - compressortime) % 60);
             id(lg_controller_state).publish_state(state_string[state]);
 
             return;
