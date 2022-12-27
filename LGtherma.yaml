@@ -235,6 +235,16 @@ number:
     initial_value: 30
     unit_of_measurement: "min"
     optimistic: true
+  - platform: template
+    id: minimum_off_time
+    name: "Minimale after-run tijd"
+    min_value: 0
+    max_value: 30
+    step: 1
+    restore_value: yes
+    initial_value: 15
+    unit_of_measurement: "min"
+    optimistic: true
 #  - platform: template
 #    id: thermostat_off_delay
 #    name: "thermostat off delay"
