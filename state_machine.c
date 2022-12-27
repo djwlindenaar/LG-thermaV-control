@@ -63,7 +63,7 @@
 
                 // set temperature high enough so compressor will start
                 //set_target_temp(id(water_temp_aanvoer).state + 3.0); // old fixed hysteresis
-                set_target_temp(id(water_temp_aanvoer).state + (water_hyst_pos - 1.0));
+                set_target_temp(id(water_temp_aanvoer).state + (water_hyst_pos + 1.0));
                 break;
               case EarlyRun:
               // Heatpump operates along a predefined behavior. Just wait until it's done and keep the target as low as possible to limit overshoot
