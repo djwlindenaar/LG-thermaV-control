@@ -30,10 +30,12 @@ logger:
 
 # Enable Home Assistant API
 api:
+  encryption:
+    key: !secret LG_therma_apikey
   password: ""
 
 ota:
-  password: ""
+  password: !secret LG_therma_otapassword
 
 wifi:
   ssid: !secret wifi_ssid
@@ -44,7 +46,7 @@ wifi:
   # Enable fallback hotspot (captive portal) in case wifi connection fails
   ap:
     ssid: "Lgtherma Fallback Hotspot"
-    password: ""
+    password: !secret LG_therma_WIFIpassword
 
 captive_portal:
 
