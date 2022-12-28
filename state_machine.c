@@ -4,10 +4,6 @@
             enum States {Idle ,  Starting ,  EarlyRun ,  Running ,  Defrosting ,  Stopping ,  Afterrun};
             static States state = Idle;
             static States newstate = Idle;
-            static float water_hyst_pos = 2.0; //still to be replaced by LG modbus state if we find how to connect this
-            static float water_hyst_neg = -4.0; //still to be replaced by LG modbus state if we find how to connect this
-            static double max_stooklijn_correction_pos = 4.0;
-            static double max_stooklijn_correction_neg = -10.0;
             static uint32_t timer = 0;
             static uint32_t statechange = 0; //timer value upon previous state change
             static uint32_t compressortime = 0; //timer value on last compressor start
@@ -63,7 +59,7 @@
 
                 // set temperature high enough so compressor will start
                 //set_target_temp(id(water_temp_aanvoer).state + 3.0); // old fixed hysteresis
-                set_target_temp(id(water_temp_aanvoer).state + (water_hyst_pos + 1.0));
+                set_target_temp(id(water_temp_aanvoer).state + (C->water_hyst_pos + 1.0));
                 break;
               case EarlyRun:
               // Heatpump operates along a predefined behavior. Just wait until it's done and keep the target as low as possible to limit overshoot
@@ -74,7 +70,7 @@
                   break;
                 } else {
                   // set_target_temp(id(water_temp_aanvoer).state - 3.0); // old fixed hysteresis
-                  set_target_temp(id(water_temp_aanvoer).state + (water_hyst_neg + 1.0));
+                  set_target_temp(id(water_temp_aanvoer).state + (C->water_hyst_neg + 1.0));
                 }
                 break;
               case Defrosting:
@@ -99,7 +95,7 @@
                   // temperatures are correct at 17.5 lpm, e.g. at 35 lpm, the delta is halved.
                   double corrected_stooklijn = (id(stooklijn_target) - id(water_temp_retour).state) * 17.5 / id(current_flow_rate).state + id(water_temp_retour).state;
 
-                  double target = corrected_stooklijn + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), max_stooklijn_correction_neg, max_stooklijn_correction_pos);
+                  double target = corrected_stooklijn + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), C->max_stooklijn_correction_neg, C->max_stooklijn_correction_pos);
                   double delta = id(water_temp_aanvoer).state - target;
                   bool minimum_run_time_passed = ((timer - compressortime) > (id(minimum_run_time).state*60));
   
@@ -120,7 +116,7 @@
                   if (delta > 0) { //if the temperature is overshooting, don't pull down by reducing the target. But never lower than hysteresis below actual...
                     //set_target_temp(max((id(water_temp_aanvoer).state - 3.0), (target - delta)));
                     //set_target_temp(max((id(water_temp_aanvoer).state - 3.0), (target)));// old fixed hysteresis
-                    set_target_temp(max((id(water_temp_aanvoer).state + (water_hyst_neg + 1.0)), (target)));
+                    set_target_temp(max((id(water_temp_aanvoer).state + (C->water_hyst_neg + 1.0)), (target)));
                   } else {
                     set_target_temp(target);
                   }

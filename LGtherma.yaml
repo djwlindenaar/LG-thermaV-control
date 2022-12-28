@@ -7,7 +7,14 @@ esphome:
     priority: 200
     then:
       lambda: !lambda |-
+          C = new Customize();
           //Set initial states
+
+  includes:
+    - custom.h
+    - declare_custom.h
+    - custom.cpp
+
 
 esp32:
   board: nodemcu-32s
