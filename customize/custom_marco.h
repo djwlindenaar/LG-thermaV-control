@@ -1,4 +1,3 @@
-#include <custom.h>
 
 Customize::Customize() 
 {
