@@ -1,5 +1,6 @@
 substitutions:
   device_name: !secret device_name
+  customize: !secret customize
 
 esphome:
   name: "${device_name}"
@@ -11,9 +12,9 @@ esphome:
           //Set initial states
 
   includes:
-    - custom.h
-    - declare_custom.h
-    - custom.cpp
+    - customize/custom.h
+    - customize/declare_custom.h
+    - customize/custom_${customize}.cpp
 
 
 esp32:
