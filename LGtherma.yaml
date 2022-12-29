@@ -1,5 +1,5 @@
 substitutions:
-  device_name: lgtherma
+  device_name: !secret device_name
 
 esphome:
   name: "${device_name}"
@@ -47,12 +47,12 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-  domain: ".home.lan"
+  domain: !secret wifi_domain
   power_save_mode: None
 
   # Enable fallback hotspot (captive portal) in case wifi connection fails
   ap:
-    ssid: "Lgtherma Fallback Hotspot"
+    ssid: "${device_name} Fallback Hotspot"
     password: !secret LG_therma_WIFIpassword
 
 captive_portal:
