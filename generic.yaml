@@ -1,7 +1,3 @@
-substitutions:
-  device_name: !secret device_name
-  customize: !secret customize
-
 esphome:
   name: "${device_name}"
   on_boot:

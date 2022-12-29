@@ -1,3 +1,7 @@
+substitutions:
+  customize: marco
+  device_name: esp-lgthermav
+
 packages:
   powermeter: !include Powermeter.yaml
   heatpump: !include LGheatpump.yaml

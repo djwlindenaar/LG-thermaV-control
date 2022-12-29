@@ -1,3 +1,7 @@
+substitutions:
+  customize: daniel
+  device_name: lgtherma
+
 packages:
   powermeter: !include Powermeter.yaml
   heatpump: !include LGheatpump.yaml
