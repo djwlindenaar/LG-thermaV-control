@@ -3,9 +3,9 @@ substitutions:
   device_name: lgtherma
 
 packages:
-  powermeter: !include Powermeter.yaml
-  heatpump: !include LGheatpump.yaml
-  generic: !include generic.yaml
+  powermeter: !include packages/Powermeter.yaml
+  heatpump: !include packages/LGheatpump.yaml
+  generic: !include packages/generic.yaml
 
 sensor:
   - platform: homeassistant

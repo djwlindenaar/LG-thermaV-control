@@ -3,9 +3,9 @@ substitutions:
   device_name: esp-lgthermav
 
 packages:
-  powermeter: !include Powermeter.yaml
-  heatpump: !include LGheatpump.yaml
-  generic: !include generic.yaml
+  powermeter: !include packages/Powermeter.yaml
+  heatpump: !include packages/LGheatpump.yaml
+  generic: !include packages/generic.yaml
 
 sensor:
 #fake the Huiskamer_xxx sensors to make the rest of the code as generic as possible:)

@@ -264,7 +264,7 @@ switch:
 interval:
   - interval: 20s
     id: state_machine
-    then: !include { file: state_machine.c }
+    then: !include state_machine.c
   - interval: 60s
     then:
       - lambda: |-
