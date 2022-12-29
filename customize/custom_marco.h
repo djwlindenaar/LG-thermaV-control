@@ -7,3 +7,6 @@ Customize::Customize()
     max_stooklijn_correction_pos = 3.0;
     max_stooklijn_correction_neg = -5.0;
 }
+
+
+void Customize::custom_idle_behavior() {};

@@ -13,8 +13,7 @@ esphome:
 
   includes:
     - customize/custom.h
-    - customize/declare_custom.h
-    - customize/custom_${customize}.cpp
+    - customize/custom_${customize}.h
 
 
 esp32:
