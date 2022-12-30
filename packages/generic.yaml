@@ -28,6 +28,7 @@ logger:
     modbus_controller.output: WARN
     esp32.preferences: WARN
     sensor: WARN
+    dallas.sensor: WARN
 #  level: INFO
 #  level: VERBOSE
 
