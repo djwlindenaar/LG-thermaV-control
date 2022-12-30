@@ -259,6 +259,11 @@ switch:
     id: thermostat_wp_heat
     restore_state: yes
     optimistic: true
+  - platform: template
+    name: "Force run end"
+    id: force_run_end
+    restore_mode: ALWAYS_OFF
+    optimistic: true
 
 
 interval:

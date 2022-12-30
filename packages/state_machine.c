@@ -31,6 +31,7 @@
               //Nothing is going on, keep checking if something should be going on
                 if (id(thermostat_wp_heat).state) {
                   newstate = Starting;
+                  id(force_run_end).turn_off();
                   id(modbus_enable_heat).turn_on();
                   break;
                 }
@@ -93,8 +94,10 @@
   
                   ESP_LOGD(state_string[state], "Delta: %f, Stooklijn: %f, corrected stooklijn: %f, target: %f", delta, id(stooklijn_target), corrected_stooklijn, target);
   
-                  if ((!id(thermostat_wp_heat).state) && minimum_run_time_passed && (id(stooklijn_target) < 24.0)) {
+                  if (((!id(thermostat_wp_heat).state) && minimum_run_time_passed && (id(stooklijn_target) < 24.0)) ||
+                      (id(force_run_end).state)) {
                     id(modbus_enable_heat).turn_off();
+                    id(force_run_end).turn_off();
                     set_target_temp(20.0);
                     newstate = Stopping;
                     break;
