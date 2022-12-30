@@ -150,8 +150,8 @@ number:
     id: huiskamer_thermostaat_target
     min_value: 10
     max_value: 25
-    initial_value: 19
-    step: 1
+    initial_value: ${thermostat_initial_value} #19.0
+    step: ${thermostat_step_size} #1
     restore_value: yes
     unit_of_measurement: "°C"
     optimistic: true
@@ -185,7 +185,7 @@ number:
     id: stooklijn_max_wtemp
     name: "Stooklijn Maximum Watertemperatuur"
     min_value: 20
-    max_value: 60
+    max_value: ${max_wtemp_custom} #was 60
     step: 1
     restore_value: yes
     initial_value: 35

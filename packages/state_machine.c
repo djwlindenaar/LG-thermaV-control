@@ -1,6 +1,5 @@
           lambda: !lambda |-
-            static const char*state_string[] =
-                       {"Idle", "Starting", "EarlyRun", "Running", "Defrosting", "Stopping", "Afterrun"};
+            static const char*state_string[] = {"Idle", "Starting", "EarlyRun", "Running", "Defrosting", "Stopping", "Afterrun"};
             enum States {Idle ,  Starting ,  EarlyRun ,  Running ,  Defrosting ,  Stopping ,  Afterrun};
             static States state = Idle;
             static States newstate = Idle;
@@ -16,7 +15,7 @@
               if (id(compressor_running).state) {
                 newstate = state = Running;
               } else {
-                if (id(water_temp_target_output).state > 20)
+                if (id(water_temp_target_output).state > 20) // turn on if stooklijn asks more then absolute water minimum
                   newstate = state = Starting;
                 else
                   newstate = state = Idle;
@@ -86,7 +85,7 @@
                   // concept it that we correct the delta between stooklijn target and returning water temp by the flow rate. My stooklijn
                   // is more or less accurate for the minimal flow rate of 17.5 lpm, so that's the baseline flow. (i.e. the stooklijn
                   // temperatures are correct at 17.5 lpm, e.g. at 35 lpm, the delta is halved.
-                  double corrected_stooklijn = (id(stooklijn_target) - id(water_temp_retour).state) * 17.5 / id(current_flow_rate).state + id(water_temp_retour).state;
+                  double corrected_stooklijn = (id(stooklijn_target) - id(water_temp_retour).state) * (C->base_stooklijn_flow) / id(current_flow_rate).state + id(water_temp_retour).state;
 
                   double target = corrected_stooklijn + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), C->max_stooklijn_correction_neg, C->max_stooklijn_correction_pos);
                   double delta = id(water_temp_aanvoer).state - target;
@@ -94,12 +93,13 @@
   
                   ESP_LOGD(state_string[state], "Delta: %f, Stooklijn: %f, corrected stooklijn: %f, target: %f", delta, id(stooklijn_target), corrected_stooklijn, target);
   
-                  if (((!id(thermostat_wp_heat).state) && minimum_run_time_passed && (id(stooklijn_target) < 24.0)) ||
+                  // includes ugly hack so unit is not turned off when stooklijn_target is still high enough to keep house on target with minimum power
+                  if (((!id(thermostat_wp_heat).state) && minimum_run_time_passed && (id(stooklijn_target) < 26.0)) ||
                       (id(force_run_end).state)) {
                     id(modbus_enable_heat).turn_off();
                     id(force_run_end).turn_off();
                     id(thermostat_wp_heat).turn_off();
-                    set_target_temp(20.0);
+                    set_target_temp(20); //hard set at absolute minimum water temp, so unit wont turn on based on its hysteresis
                     newstate = Stopping;
                     break;
                   }

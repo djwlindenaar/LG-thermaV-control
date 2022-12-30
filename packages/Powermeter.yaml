@@ -5,8 +5,8 @@ modbus:
 
 uart:
   - id: uart_modbus_pw
-    tx_pin: GPIO19
-    rx_pin: GPIO18
+    tx_pin: ${GPIO_modbus_powermeter_tx} #was hardcoded GPIO19, my setup #GPIO23
+    rx_pin: ${GPIO_modbus_powermeter_rx} #was hardcoded GPIO18, my setup #GPIO22
     baud_rate: 9600
     parity: even
     data_bits: 8

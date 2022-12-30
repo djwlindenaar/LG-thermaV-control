@@ -5,8 +5,8 @@ modbus:
 
 uart:
   - id: uart_modbus_lg
-    tx_pin: GPIO23
-    rx_pin: GPIO22
+    tx_pin: ${GPIO_modbus_LG_tx} #was hardcoded GPIO23, my setup #GPIO19
+    rx_pin: ${GPIO_modbus_LG_rx} #was hardcoded GPIO22, my setup #GPIO18
     baud_rate: 9600
     parity: none
     data_bits: 8
