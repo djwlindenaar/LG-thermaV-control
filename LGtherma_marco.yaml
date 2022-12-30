@@ -4,12 +4,16 @@ substitutions:
   thermostat_step_size: "0.5"
   thermostat_initial_value: "20.5"
   max_wtemp_custom: "40.0"
+  GPIO_modbus_powermeter_tx: "GPIO23"
+  GPIO_modbus_powermeter_rx: "GPIO22"
+  GPIO_modbus_LG_tx: "GPIO19"
+  GPIO_modbus_LG_rx: "GPIO18"
   
 packages:
   powermeter: !include packages/Powermeter.yaml
   heatpump: !include packages/LGheatpump.yaml
   generic: !include packages/generic.yaml
- 
+
 sensor:
 #fake the Huiskamer_xxx sensors to make the rest of the code as generic as possible:)
   - platform: homeassistant
