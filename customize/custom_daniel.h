@@ -5,6 +5,7 @@ Customize::Customize()
     water_hyst_neg = -4.0; //still to be replaced by LG modbus state if we find how to connect this
     max_stooklijn_correction_pos = 4.0;
     max_stooklijn_correction_neg = -10.0;
+    base_stooklijn_flow = 17.5;
 }
 
 void Customize::custom_idle_behavior()
