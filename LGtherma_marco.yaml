@@ -1,0 +1,25 @@
+substitutions:
+  customize: marco
+  device_name: esp-lgthermav
+
+packages:
+  powermeter: !include packages/Powermeter.yaml
+  heatpump: !include packages/LGheatpump.yaml
+  generic: !include packages/generic.yaml
+
+sensor:
+#fake the Huiskamer_xxx sensors to make the rest of the code as generic as possible:)
+  - platform: template
+    name: "Huiskamer lucht"
+    id: huiskamer_lucht
+    update_interval: 60s
+    lambda: |-
+      return id(binnen_temp).state;
+    on_value:
+      then: 
+        script.execute: thermostaat
+  - platform: template
+    name: "Huiskamer vloer"
+    id: huiskamer_vloer
+    lambda: |-
+      return 20.0;

@@ -1,0 +1,21 @@
+substitutions:
+  customize: daniel
+  device_name: lgtherma
+
+packages:
+  powermeter: !include packages/Powermeter.yaml
+  heatpump: !include packages/LGheatpump.yaml
+  generic: !include packages/generic.yaml
+
+sensor:
+  - platform: homeassistant
+    name: "Huiskamer lucht"
+    id: huiskamer_lucht
+    entity_id: sensor.huiskamer_lucht
+    on_value:
+      then: 
+        script.execute: thermostaat
+  - platform: homeassistant
+    name: "Huiskamer vloer"
+    id: huiskamer_vloer
+    entity_id: sensor.huiskamer_vloer

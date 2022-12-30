@@ -1,13 +1,16 @@
-substitutions:
-  device_name: lgtherma
-
 esphome:
   name: "${device_name}"
   on_boot:
     priority: 200
     then:
       lambda: !lambda |-
+          C = new Customize();
           //Set initial states
+
+  includes:
+    - customize/custom.h
+    - customize/custom_${customize}.h
+
 
 esp32:
   board: nodemcu-32s
@@ -40,22 +43,18 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-  domain: ".home.lan"
+  domain: !secret wifi_domain
   power_save_mode: None
 
   # Enable fallback hotspot (captive portal) in case wifi connection fails
   ap:
-    ssid: "Lgtherma Fallback Hotspot"
+    ssid: "${device_name} Fallback Hotspot"
     password: !secret LG_therma_WIFIpassword
 
 captive_portal:
 
 #external_components:
 #  - source: my_components
-
-packages:
-  powermeter: !include Powermeter.yaml
-  heatpump: !include LGheatpump.yaml
 
 globals:
   - id: stooklijn_target
@@ -265,7 +264,7 @@ switch:
 interval:
   - interval: 20s
     id: state_machine
-    then: !include { file: state_machine.c }
+    then: !include state_machine.c
   - interval: 60s
     then:
       - lambda: |-
@@ -277,17 +276,6 @@ interval:
     
 sensor:
 
-  - platform: homeassistant
-    name: "Huiskamer lucht"
-    id: huiskamer_lucht
-    entity_id: sensor.huiskamer_lucht
-    on_value:
-      then: 
-        script.execute: thermostaat
-  - platform: homeassistant
-    name: "Huiskamer vloer"
-    id: huiskamer_vloer
-    entity_id: sensor.huiskamer_vloer
 
   - platform: template
     name: "Stooklijn Watertemp Target"
