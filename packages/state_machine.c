@@ -9,7 +9,7 @@
             static uint32_t compressortime = 0; //timer value on last compressor start
             static uint32_t dt = round(id(state_machine).get_update_interval()/1000);
             auto water_temp_call = id(water_temp_target_output).make_call();
-            #define set_target_temp(x) water_temp_call.set_value(round(x));water_temp_call.perform();ESP_LOGD("set_target_temp", "target set to: %f", round(x));
+            #define set_target_temp(x) if (abs(x-id(water_temp_target_output).state) > 0.7) {water_temp_call.set_value(round(x));water_temp_call.perform();ESP_LOGD("set_target_temp", "target set to: %f", round(x));}
 
             timer += dt;
             if (timer < 60) { // we just got booted, let's take some time to figure out what's happening before taking action
