@@ -98,6 +98,7 @@
                       (id(force_run_end).state)) {
                     id(modbus_enable_heat).turn_off();
                     id(force_run_end).turn_off();
+                    id(thermostat_wp_heat).turn_off();
                     set_target_temp(20.0);
                     newstate = Stopping;
                     break;
