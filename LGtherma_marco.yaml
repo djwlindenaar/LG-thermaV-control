@@ -23,3 +23,17 @@ sensor:
     id: huiskamer_vloer
     lambda: |-
       return 20.0;
+  - platform: template
+    id: hp_temp_out
+    name: "Heatpump temp outflow"
+    accuracy_decimals: 2
+    update_interval: 5s
+    lambda: |-
+      return id(water_temp_aanvoer).state;
+  - platform: template
+    id: hp_temp_in
+    name: "Heatpump temp inflow"
+    accuracy_decimals: 2
+    update_interval: 5s
+    lambda: |-
+      return id(water_temp_retour).state;

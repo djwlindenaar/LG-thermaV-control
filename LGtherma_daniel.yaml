@@ -7,6 +7,10 @@ packages:
   heatpump: !include packages/LGheatpump.yaml
   generic: !include packages/generic.yaml
 
+dallas:
+  pin: GPIO26
+  update_interval: 5s
+
 sensor:
   - platform: homeassistant
     name: "Huiskamer lucht"
@@ -19,3 +23,24 @@ sensor:
     name: "Huiskamer vloer"
     id: huiskamer_vloer
     entity_id: sensor.huiskamer_vloer
+
+  - platform: dallas
+    address: 0x1c44be571f64ff28
+    id: hp_temp_out
+    name: "Heatpump temp outflow"
+    accuracy_decimals: 2
+    filters:
+    - sliding_window_moving_average:
+        window_size: 4
+        send_every: 1
+
+
+  - platform: dallas
+    address: 0x8a55bd571f64ff28
+    id: hp_temp_in
+    name: "Heatpump temp inflow"
+    accuracy_decimals: 2
+    filters:
+    - sliding_window_moving_average:
+        window_size: 4
+        send_every: 1

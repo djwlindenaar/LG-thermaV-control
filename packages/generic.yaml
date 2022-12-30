@@ -320,6 +320,25 @@ sensor:
           window_size: 30
           send_every: 1
 
+  - platform: template
+    name: "Heatpump Water power"
+    id: water_power
+    unit_of_measurement: "W"
+    state_class: measurement
+    device_class: power
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: |-
+        return (id(hp_temp_out).state - id(hp_temp_in).state) * id(current_flow_rate).state / 60.0 * 4168.0;
+
+  - platform: template
+    name: "Heatpump COP"
+    id: hp_cop
+    unit_of_measurement: ""
+    accuracy_decimals: 2
+    update_interval: 20s
+    lambda: |-
+        return (id(water_power).state/id(lg_total_active_power).state);
 
   - platform: wifi_signal
     name: "${device_name} WiFi Signal"
