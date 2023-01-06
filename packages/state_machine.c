@@ -4,10 +4,11 @@
             static States state = Idle;
             static States newstate = Idle;
             // mpa stands for minimum power avoidance
-            static const char*mpa_state_string[] = {"Idle", "Initializing", "Active"};
-            enum MpaStates {mpaIdle ,  mpaInitializing ,  mpaActive };
+            static const char*mpa_state_string[] = {"Idle", "Initializing", "Stabilizing", "ReInitialize", "Active"};
+            enum MpaStates {mpaIdle ,  mpaInitializing, mpaStabilizing, mpaReInitialize,  mpaActive };
             static MpaStates mpastate = mpaIdle;
             static MpaStates newmpastate = mpaIdle;
+            static float mpa_compressorspeed = 0;
 
             static uint32_t timer = 0;
             static uint32_t mpatimer = 0;
@@ -103,22 +104,36 @@
                     case mpaIdle:
                       if (id(compressor_speed).state == 15) { //compressor running at minimum speed!
                         newmpastate = mpaInitializing;
+                        mpa_compressorspeed = id(compressor_speed).state;
                         mpatarget = max(id(doel_temp).state + 1, id(water_temp_aanvoer).state+1); // let's start with a new target, one above the current target temperature or one above current aanvoer temp, whichever is highest
                       } else {
                         mpatarget = 0;
                       }
                       break;
-                    case mpaInitializing: 
-                      if ((timer - mpatimer) > 30*60) // been stabilizing for 30 minutes, we are active!
+                    case mpaInitializing:
+                      if (id(compressor_speed).state != mpa_compressorspeed) { //compressor is responding
+                        newmpastate = mpaStabilizing;
+                      } else if ((timer - mpatimer) > 16*60) { //compressor is not responding! increase the target...
+                        newmpastate = mpaReInitialize;
+                        mpatarget += 1.0;
+                      }
+                      break;
+                    case mpaReInitialize:
+                      newmpastate = mpaInitializing;
+                      break;
+                    case mpaStabilizing:
+                      if ((timer - mpatimer) > 45*60) // been stabilizing for 45 minutes, we are active!
                         newmpastate = mpaActive;
 
                       break;
                     case mpaActive:
-                      if (id(compressor_speed).state > 22) { //we're overdoing it!
+                      if (id(compressor_speed).state > 25) { //we're overdoing it!
                         newmpastate = mpaInitializing;
+                        mpa_compressorspeed = id(compressor_speed).state;
                         mpatarget -= 1;
                       } else if (id(compressor_speed).state == 15) { //we're not doing enough!
                         newmpastate = mpaInitializing;
+                        mpa_compressorspeed = id(compressor_speed).state;
                         mpatarget += 1;
                       }
                       break;
