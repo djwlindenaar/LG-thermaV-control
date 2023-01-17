@@ -99,44 +99,50 @@
 
                   double target = corrected_stooklijn + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), C->max_stooklijn_correction_neg, C->max_stooklijn_correction_pos);
                   bool minimum_run_time_passed = ((timer - compressortime) > (id(minimum_run_time).state*60));
-  
-                  switch (mpastate) {
-                    case mpaIdle:
-                      if (id(compressor_speed).state == 15) { //compressor running at minimum speed!
-                        newmpastate = mpaInitializing;
-                        mpa_compressorspeed = id(compressor_speed).state;
-                        mpatarget = max(id(doel_temp).state + 1, id(water_temp_aanvoer).state+1); // let's start with a new target, one above the current target temperature or one above current aanvoer temp, whichever is highest
-                      } else {
-                        mpatarget = 0;
-                      }
-                      break;
-                    case mpaInitializing:
-                      if (id(compressor_speed).state != mpa_compressorspeed) { //compressor is responding
-                        newmpastate = mpaStabilizing;
-                      } else if ((timer - mpatimer) > 16*60) { //compressor is not responding! increase the target...
-                        newmpastate = mpaReInitialize;
-                        mpatarget += 1.0;
-                      }
-                      break;
-                    case mpaReInitialize:
-                      newmpastate = mpaInitializing;
-                      break;
-                    case mpaStabilizing:
-                      if ((timer - mpatimer) > 45*60) // been stabilizing for 45 minutes, we are active!
-                        newmpastate = mpaActive;
 
-                      break;
-                    case mpaActive:
-                      if (id(compressor_speed).state > 25) { //we're overdoing it!
+                  if (state == Running) { //only do minimum power stuff when running (and especially not when defrosting!)
+                    switch (mpastate) {
+                      case mpaIdle:
+                        if ((id(compressor_speed).state <= 18) && (min(id(temp18_filtered).state,id(temp20_filtered).state) > -0.0)) { //compressor running at minimum speed and evaporator is not freezing!
+                          newmpastate = mpaInitializing;
+                          mpa_compressorspeed = id(compressor_speed).state;
+                          mpatarget = max(id(doel_temp).state + 1, id(water_temp_aanvoer).state+1); // let's start with a new target, one above the current target temperature or one above current aanvoer temp, whichever is highest
+                        } else {
+                          mpatarget = 0;
+                        }
+                        break;
+                      case mpaInitializing:
+                        if (id(compressor_speed).state != mpa_compressorspeed) { //compressor is responding
+                          newmpastate = mpaStabilizing;
+                        } else if ((timer - mpatimer) > 16*60) { //compressor is not responding! increase the target...
+                          newmpastate = mpaReInitialize;
+                          mpatarget += 1.0;
+                        }
+                        break;
+                      case mpaReInitialize:
                         newmpastate = mpaInitializing;
-                        mpa_compressorspeed = id(compressor_speed).state;
-                        mpatarget -= 1;
-                      } else if (id(compressor_speed).state == 15) { //we're not doing enough!
-                        newmpastate = mpaInitializing;
-                        mpa_compressorspeed = id(compressor_speed).state;
-                        mpatarget += 1;
-                      }
-                      break;
+                        break;
+                      case mpaStabilizing:
+                        if ((timer - mpatimer) > 45*60) // been stabilizing for 45 minutes, we are active!
+                          newmpastate = mpaActive;
+
+                        break;
+                      case mpaActive:
+                        if (id(compressor_speed).state > 35) { //we're overdoing it!
+                          newmpastate = mpaInitializing;
+                          mpa_compressorspeed = id(compressor_speed).state;
+                          mpatarget -= 1;
+                        } else if (min(id(temp18_filtered).state,id(temp20_filtered).state) < -1.0) { // evaporator is freezing let's reduce or should we just shut down?
+                          newmpastate = mpaInitializing;
+                          mpa_compressorspeed = id(compressor_speed).state;
+                          mpatarget -= 1;
+                        } else if (id(compressor_speed).state <= 18) { //we're not doing enough!
+                          newmpastate = mpaInitializing;
+                          mpa_compressorspeed = id(compressor_speed).state;
+                          mpatarget += 1;
+                        }
+                        break;
+                    }
                   }
                   if (target > mpatarget)
                     newmpastate = mpaIdle;
