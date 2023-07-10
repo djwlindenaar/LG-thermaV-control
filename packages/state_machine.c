@@ -3,7 +3,16 @@
             enum States {Idle ,  Starting ,  EarlyRun ,  Running ,  Defrosting ,  Stopping ,  Afterrun};
             static States state = Idle;
             static States newstate = Idle;
+            // mpa stands for minimum power avoidance
+            static const char*mpa_state_string[] = {"Idle", "Initializing", "Stabilizing", "ReInitialize", "Active"};
+            enum MpaStates {mpaIdle ,  mpaInitializing, mpaStabilizing, mpaReInitialize,  mpaActive };
+            static MpaStates mpastate = mpaIdle;
+            static MpaStates newmpastate = mpaIdle;
+            static float mpa_compressorspeed = 0;
+
             static uint32_t timer = 0;
+            static uint32_t mpatimer = 0;
+            static uint32_t mpatarget = 0;
             static uint32_t statechange = 0; //timer value upon previous state change
             static uint32_t compressortime = 0; //timer value on last compressor start
             static uint32_t dt = round(id(state_machine).get_update_interval()/1000);
@@ -59,6 +68,7 @@
                 id(modbus_set_silent_mode).turn_on(); // turn silent mode on at start, to get less overshoot
                 if ((timer - statechange) > (15*60)) { // EarlyRun takes at most 15 minutes
                   newstate = Running;
+                  newmpastate = mpaIdle;
                   break;
                 } else {
                   // set_target_temp(id(water_temp_aanvoer).state - 3.0); // old fixed hysteresis
@@ -88,9 +98,62 @@
                   double corrected_stooklijn = (id(stooklijn_target) - id(water_temp_retour).state) * (C->base_stooklijn_flow) / id(current_flow_rate).state + id(water_temp_retour).state;
 
                   double target = corrected_stooklijn + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), C->max_stooklijn_correction_neg, C->max_stooklijn_correction_pos);
-                  double delta = id(water_temp_aanvoer).state - target;
                   bool minimum_run_time_passed = ((timer - compressortime) > (id(minimum_run_time).state*60));
-  
+
+                  if (state == Running) { //only do minimum power stuff when running (and especially not when defrosting!)
+                    switch (mpastate) {
+                      case mpaIdle:
+                        if ((id(compressor_speed).state <= 18) && (min(id(temp18_filtered).state,id(temp20_filtered).state) > -0.0)) { //compressor running at minimum speed and evaporator is not freezing!
+                          newmpastate = mpaInitializing;
+                          mpa_compressorspeed = id(compressor_speed).state;
+                          mpatarget = max(id(doel_temp).state + 1, id(water_temp_aanvoer).state+1); // let's start with a new target, one above the current target temperature or one above current aanvoer temp, whichever is highest
+                        } else {
+                          mpatarget = 0;
+                        }
+                        break;
+                      case mpaInitializing:
+                        if (id(compressor_speed).state != mpa_compressorspeed) { //compressor is responding
+                          newmpastate = mpaStabilizing;
+                        } else if ((timer - mpatimer) > 16*60) { //compressor is not responding! increase the target...
+                          newmpastate = mpaReInitialize;
+                          mpatarget += 1.0;
+                        }
+                        break;
+                      case mpaReInitialize:
+                        newmpastate = mpaInitializing;
+                        break;
+                      case mpaStabilizing:
+                        if ((timer - mpatimer) > 45*60) // been stabilizing for 45 minutes, we are active!
+                          newmpastate = mpaActive;
+
+                        break;
+                      case mpaActive:
+                        if (id(compressor_speed).state > 35) { //we're overdoing it!
+                          newmpastate = mpaInitializing;
+                          mpa_compressorspeed = id(compressor_speed).state;
+                          mpatarget -= 1;
+                        } else if (min(id(temp18_filtered).state,id(temp20_filtered).state) < -1.0) { // evaporator is freezing let's reduce or should we just shut down?
+                          newmpastate = mpaInitializing;
+                          mpa_compressorspeed = id(compressor_speed).state;
+                          mpatarget -= 1;
+                        } else if (id(compressor_speed).state <= 18) { //we're not doing enough!
+                          newmpastate = mpaInitializing;
+                          mpa_compressorspeed = id(compressor_speed).state;
+                          mpatarget += 1;
+                        }
+                        break;
+                    }
+                  }
+                  if (target > mpatarget)
+                    newmpastate = mpaIdle;
+                  else
+                    target = mpatarget;
+
+
+
+
+                  double delta = id(water_temp_aanvoer).state - target;
+
                   ESP_LOGD(state_string[state], "Delta: %f, Stooklijn: %f, corrected stooklijn: %f, target: %f", delta, id(stooklijn_target), corrected_stooklijn, target);
   
                   // includes ugly hack so unit is not turned off when stooklijn_target is still high enough to keep house on target with minimum power
@@ -157,9 +220,16 @@
               statechange = timer;
             }
 
+            // if the mpastate is updated, handle that.
+            if (mpastate != newmpastate) {
+              mpastate = newmpastate;
+              mpatimer = timer;
+            }
+            ESP_LOGD(mpa_state_string[mpastate], "Since: %ds", timer - mpatimer);
             ESP_LOGD(state_string[state], "Since: %ds", timer - statechange);
             if (id(compressor_running).state) ESP_LOGD(state_string[state], "Compressor running for: %02u:%02u:%02u", (timer - compressortime) / 3600, ((timer - compressortime) % 3600) / 60, (timer - compressortime) % 60);
             id(lg_controller_state).publish_state(state_string[state]);
+            id(lg_mpa_controller_state).publish_state(mpa_state_string[mpastate]);
 
             return;
 

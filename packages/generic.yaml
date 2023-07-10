@@ -131,6 +131,10 @@ text_sensor:
     name: "LG Controller state"
     id: lg_controller_state
     update_interval: never
+  - platform: template
+    name: "LG MPA Controller state"
+    id: lg_mpa_controller_state
+    update_interval: never
 
 number:
   - platform: template
@@ -340,7 +344,7 @@ sensor:
   - platform: template
     name: "Heatpump COP"
     id: hp_cop
-    unit_of_measurement: ""
+    unit_of_measurement: "W/W"
     accuracy_decimals: 2
     update_interval: 20s
     lambda: |-
