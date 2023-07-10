@@ -344,7 +344,7 @@ sensor:
   - platform: template
     name: "Heatpump COP"
     id: hp_cop
-    unit_of_measurement: ""
+    unit_of_measurement: "W/W"
     accuracy_decimals: 2
     update_interval: 20s
     lambda: |-
