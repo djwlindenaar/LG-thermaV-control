@@ -1,6 +1,6 @@
           lambda: !lambda |-
-            static const char*state_string[] = {"Idle", "Starting", "EarlyRun", "Running", "Defrosting", "Stopping", "Afterrun"};
-            enum States {Idle ,  Starting ,  EarlyRun ,  Running ,  Defrosting ,  Stopping ,  Afterrun};
+            static const char*state_string[] = {"Idle", "Starting", "EarlyRun", "Running", "Defrosting", "Stopping", "Afterrun","Cooling"};
+            enum States {Idle ,  Starting ,  EarlyRun ,  Running ,  Defrosting ,  Stopping ,  Afterrun, Cooling};
             static States state = Idle;
             static States newstate = Idle;
             // mpa stands for minimum power avoidance
@@ -34,7 +34,17 @@
               return;
             }
 
+            if (id(operation_mode).state == 0.0)
+              newstate = state = Cooling;
+
+
             switch (state) {
+              case Cooling:
+                //don't know yet what to do
+                if (id(operation_mode).state == 4.0)
+                  newstate = Idle;
+
+                break;
               case Idle:
               //Nothing is going on, keep checking if something should be going on
                 if (id(thermostat_wp_heat).state) {

@@ -339,7 +339,7 @@ sensor:
     accuracy_decimals: 0
     update_interval: 5s
     lambda: |-
-        return (id(hp_temp_out).state - id(hp_temp_in).state) * id(current_flow_rate).state / 60.0 * 4168.0;
+        return (id(hp_temp_out).state - id(hp_temp_in).state) * id(current_flow_rate).state / 60.0 * 4168.0 * ((id(operation_mode).state == 0.0) ? -1.0 : 1.0);
 
   - platform: template
     name: "Heatpump COP"
