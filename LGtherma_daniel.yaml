@@ -1,7 +1,7 @@
 substitutions:
   customize: daniel
   device_name: lgtherma
-  thermostat_step_size: "1"
+  thermostat_step_size: "0.1"
   thermostat_initial_value: "19.0"
   max_wtemp_custom: "60.0"
   GPIO_modbus_powermeter_tx: "GPIO19"
