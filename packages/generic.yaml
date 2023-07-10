@@ -347,6 +347,7 @@ sensor:
     unit_of_measurement: "W/W"
     accuracy_decimals: 2
     update_interval: 20s
+    state_class: measurement
     lambda: |-
         return (id(water_power).state/id(lg_total_active_power).state);
 
