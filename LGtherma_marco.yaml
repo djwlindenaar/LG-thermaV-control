@@ -14,6 +14,12 @@ packages:
   heatpump: !include packages/LGheatpump.yaml
   generic: !include packages/generic.yaml
 
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret LG_therma_apikey
+  password: ""
+
 sensor:
 #fake the Huiskamer_xxx sensors to make the rest of the code as generic as possible:)
   - platform: homeassistant

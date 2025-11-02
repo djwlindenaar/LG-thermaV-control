@@ -32,11 +32,6 @@ logger:
 #  level: INFO
 #  level: VERBOSE
 
-# Enable Home Assistant API
-api:
-  encryption:
-    key: !secret LG_therma_apikey
-  password: ""
 
 ota:
   platform: esphome
