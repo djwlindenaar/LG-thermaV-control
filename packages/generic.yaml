@@ -39,6 +39,7 @@ api:
   password: ""
 
 ota:
+  platform: esphome
   password: !secret LG_therma_otapassword
 
 wifi:
@@ -262,7 +263,7 @@ switch:
   - platform: template
     name: "WP Heat"
     id: thermostat_wp_heat
-    restore_state: yes
+    restore_mode: RESTORE_DEFAULT_OFF
     optimistic: true
   - platform: template
     name: "Force run end"
