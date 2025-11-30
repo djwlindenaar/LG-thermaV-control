@@ -1,0 +1,95 @@
+#modbus:
+#  - id: modbus_pw
+#    uart_id: uart_modbus_pw
+#
+#
+#uart:
+#  - id: uart_modbus_pw
+#    tx_pin: ${GPIO_modbus_powermeter_tx} #was hardcoded GPIO19, my setup #GPIO23
+#    rx_pin: ${GPIO_modbus_powermeter_rx} #was hardcoded GPIO18, my setup #GPIO22
+#    baud_rate: 9600
+#    parity: even
+#    data_bits: 8
+#    stop_bits: 1
+#
+#modbus_controller:
+#  - id: pw
+#    modbus_id: modbus_pw
+#    update_interval: 5s
+#    setup_priority: -10
+#    command_throttle: 200ms
+
+sensor:
+#  - platform: template
+#    name: "LG Therma L1 Voltage"
+#    unit_of_measurement: "V"
+#    accuracy_decimals: 1
+#    lambda: return 0.0;
+#  - platform: template
+#    name: "LG Therma L2 Voltage"
+#    unit_of_measurement: "V"
+#    accuracy_decimals: 1
+#    lambda: return 0.0;
+#  - platform: template
+#    name: "LG Therma L3 Voltage"
+#    unit_of_measurement: "V"
+#    accuracy_decimals: 1
+#    lambda: return 0.0;
+#  - platform: template
+#    name: "LG Therma Grid Frequency"
+#    unit_of_measurement: "Hz"
+#    accuracy_decimals: 3
+#    lambda: return 0.0;
+#  - platform: template
+#    name: "LG Therma L1 Current"
+#    unit_of_measurement: "A"
+#    accuracy_decimals: 3
+#    lambda: return 0.0;
+#  - platform: template
+#    name: "LG Therma L2 Current"
+#    unit_of_measurement: "A"
+#    accuracy_decimals: 3
+#    lambda: return 0.0;
+#  - platform: template
+#    name: "LG Therma L3 Current"
+#    unit_of_measurement: "A"
+#    accuracy_decimals: 3
+#    lambda: return 0.0;
+  - platform: template
+    name: "LG Therma Total Active Power"
+    id: lg_total_active_power
+    unit_of_measurement: "W"
+    accuracy_decimals: 0
+    filters:
+      - multiply: 1000
+    lambda: return 0.0;
+#  - platform: template
+#    name: "LG Therma L1 Active Power"
+#    unit_of_measurement: "W"
+#    accuracy_decimals: 0
+#    filters:
+#      - multiply: 1000
+#    lambda: return 0.0;
+#  - platform: template
+#    name: "LG Therma L2 Active Power"
+#    unit_of_measurement: "W"
+#    accuracy_decimals: 0
+#    filters:
+#      - multiply: 1000
+#    lambda: return 0.0;
+#  - platform: template
+#    name: "LG Therma L3 Active Power"
+#    unit_of_measurement: "W"
+#    accuracy_decimals: 0
+#    filters:
+#      - multiply: 1000
+#    lambda: return 0.0;
+#  - platform: template
+#    name: "LG Therma Energy Consumed"
+#    unit_of_measurement: "kWh"
+#    accuracy_decimals: 3
+#    state_class: total
+#    device_class: energy
+#    filters:
+#      - median:
+#    lambda: return 0.0;
