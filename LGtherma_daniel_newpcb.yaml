@@ -1,0 +1,61 @@
+substitutions:
+  customize: daniel
+  device_name: lgtherma_test
+  thermostat_step_size: "0.1"
+  thermostat_initial_value: "19.0"
+  max_wtemp_custom: "60.0"
+  GPIO_modbus_powermeter_tx: "GPIO22"
+  GPIO_modbus_powermeter_rx: "GPIO23"
+  GPIO_modbus_LG_tx: "GPIO18"
+  GPIO_modbus_LG_rx: "GPIO19"
+
+packages:
+  powermeter: !include packages/Powermeter.yaml
+  heatpump: !include packages/LGheatpump.yaml
+  generic: !include packages/generic.yaml
+
+# Enable Home Assistant API
+api:
+#  encryption:
+#    key: !secret LG_therma_apikey
+  password: ""
+
+one_wire:
+  - platform: gpio
+    pin: GPIO14
+
+sensor:
+  - platform: homeassistant
+    name: "Huiskamer lucht"
+    id: huiskamer_lucht
+    entity_id: sensor.huiskamer_lucht
+    on_value:
+      then: 
+        script.execute: thermostaat
+  - platform: homeassistant
+    name: "Huiskamer vloer"
+    id: huiskamer_vloer
+    entity_id: sensor.huiskamer_vloer
+
+  - platform: dallas_temp
+    address: 0x1c44be571f64ff28
+    id: hp_temp_out
+    name: "Heatpump temp outflow"
+    accuracy_decimals: 2
+    update_interval: 5s
+    filters:
+    - sliding_window_moving_average:
+        window_size: 4
+        send_every: 1
+
+
+  - platform: dallas_temp
+    address: 0x8a55bd571f64ff28
+    id: hp_temp_in
+    name: "Heatpump temp inflow"
+    accuracy_decimals: 2
+    update_interval: 5s
+    filters:
+    - sliding_window_moving_average:
+        window_size: 4
+        send_every: 1
