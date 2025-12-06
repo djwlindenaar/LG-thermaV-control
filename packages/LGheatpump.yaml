@@ -20,25 +20,34 @@ modbus_controller:
     setup_priority: -10
     command_throttle: 200ms
 
-number:
+select:
   - platform: modbus_controller
     id: operation_mode
     modbus_controller_id: lg
     name: "LG Operation Mode"
-    register_type: holding
+    #register_type: holding
     address: 0
-    min_value: 0
-    max_value: 4
+    #min_value: 0
+    #max_value: 4
+    optionsmap:
+      "Cooling": 0
+      "Auto": 3
+      "Heating": 4
     value_type: U_WORD
   - platform: modbus_controller
     modbus_controller_id: lg
     name: "LG control method"
     id: control_method
-    register_type: holding
     address: 1
+    optionsmap:
+      "Outlet Water": 0
+      "Inlet Water": 1
+      "Room Air": 2
     #min_value: 0
     #max_value: 5
     value_type: U_WORD
+
+number:
   - platform: modbus_controller
     modbus_controller_id: lg
     name: "LG water temperature target"
@@ -57,6 +66,7 @@ number:
     min_value: 0
     max_value: 8
     value_type: U_WORD
+    mode: box
   - platform: modbus_controller
     modbus_controller_id: lg
     name: "LG unkown 10"

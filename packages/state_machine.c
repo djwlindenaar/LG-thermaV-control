@@ -34,14 +34,14 @@
               return;
             }
 
-            if (id(operation_mode).state == 0.0)
+            if (strcmp(id(operation_mode).current_option(), "Cooling") == 0)
               newstate = state = Cooling;
 
 
             switch (state) {
               case Cooling:
                 //don't know yet what to do
-                if (id(operation_mode).state == 4.0)
+                if (strcmp(id(operation_mode).current_option(), "Heating") == 0)
                   newstate = Idle;
 
                 break;

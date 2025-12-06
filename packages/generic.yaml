@@ -134,6 +134,7 @@ text_sensor:
 
 number:
   - platform: template
+    mode: box
     name: "Stooklijn offset"
     id: wp_stooklijn_offset
     min_value: -5
@@ -147,6 +148,7 @@ number:
       then:
         - script.execute: update_stooklijn_target
   - platform: template
+    mode: box
     name: "Thermostaat target"
     id: huiskamer_thermostaat_target
     min_value: 10
@@ -160,6 +162,7 @@ number:
       then:
         script.execute: thermostaat
   - platform: template
+    mode: box
     name: "Thermostat error gain"
     id: thermostat_error_gain
     min_value: 0
@@ -170,6 +173,7 @@ number:
     unit_of_measurement: "°C/°C"
     optimistic: true
   - platform: template
+    mode: box
     id: stooklijn_min_oat
     name: "Stooklijn Minimum Buitentemperatuur"
     min_value: -25
@@ -183,6 +187,7 @@ number:
       then:
         - script.execute: update_stooklijn_target
   - platform: template
+    mode: box
     id: stooklijn_max_wtemp
     name: "Stooklijn Maximum Watertemperatuur"
     min_value: 20
@@ -196,6 +201,7 @@ number:
       then:
         - script.execute: update_stooklijn_target
   - platform: template
+    mode: box
     id: stooklijn_min_wtemp
     name: "Stooklijn Minimum Watertemperatuur"
     min_value: 20
@@ -209,6 +215,7 @@ number:
       then:
         - script.execute: update_stooklijn_target
   - platform: template
+    mode: box
     id: stooklijn_start_temp
     name: "Stooklijn Start Buitentemperatuur"
     min_value: 0
@@ -222,6 +229,7 @@ number:
       then:
         - script.execute: update_stooklijn_target
   - platform: template
+    mode: box
     id: minimum_run_time
     name: "Minimale run tijd"
     min_value: 0
@@ -232,6 +240,7 @@ number:
     unit_of_measurement: "min"
     optimistic: true
   - platform: template
+    mode: box
     id: minimum_off_time
     name: "Minimale after-run tijd"
     min_value: 0
@@ -335,7 +344,7 @@ sensor:
     accuracy_decimals: 0
     update_interval: 5s
     lambda: |-
-        return (id(hp_temp_out).state - id(hp_temp_in).state) * id(current_flow_rate).state / 60.0 * 4168.0 * ((id(operation_mode).state == 0.0) ? -1.0 : 1.0);
+        return (id(hp_temp_out).state - id(hp_temp_in).state) * id(current_flow_rate).state / 60.0 * 4168.0 * ((strcmp(id(operation_mode).current_option(), "Cooling") == 0) ? -1.0 : 1.0);
 
   - platform: template
     name: "Heatpump COP"
