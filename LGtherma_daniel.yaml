@@ -18,6 +18,7 @@ packages:
 api:
 #  encryption:
 #    key: !secret LG_therma_apikey
+  id: api_id
   password: ""
 
 one_wire:
@@ -27,11 +28,9 @@ one_wire:
 sensor:
   - platform: homeassistant
     name: "Huiskamer lucht"
-    id: huiskamer_lucht
+    id: huiskamer_lucht_hass
     entity_id: sensor.huiskamer_lucht
-    on_value:
-      then: 
-        script.execute: thermostaat
+
   - platform: homeassistant
     name: "Huiskamer vloer"
     id: huiskamer_vloer

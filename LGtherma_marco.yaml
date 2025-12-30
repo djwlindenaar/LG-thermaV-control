@@ -18,17 +18,15 @@ packages:
 api:
   encryption:
     key: !secret LG_therma_apikey
+  id: api_id
   password: ""
 
 sensor:
 #fake the Huiskamer_xxx sensors to make the rest of the code as generic as possible:)
   - platform: homeassistant
     name: "Huiskamer lucht"
-    id: huiskamer_lucht
+    id: huiskamer_lucht_hass
     entity_id: sensor.th_woonkamer_temperature
-    on_value:
-      then: 
-        script.execute: thermostaat
   - platform: template
     name: "Huiskamer vloer"
     id: huiskamer_vloer

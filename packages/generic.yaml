@@ -304,6 +304,17 @@ sensor:
     #    //return id(stooklijn_target);
 
   - platform: template
+    name: "Huiskamer lucht"
+    id: huiskamer_lucht
+    unit_of_measurement: "°C"
+    update_interval: 1s
+    lambda: |-
+      if (id(api_id).is_connected(true))
+        return id(huiskamer_lucht_hass).state;
+      else
+        return id(binnen_temp).state;
+
+  - platform: template
     name: "Thermostat error"
     id: thermostat_error
     unit_of_measurement: "°C"
@@ -314,6 +325,10 @@ sensor:
       - sliding_window_moving_average:
           window_size: 120
           send_every: 1
+    on_value:
+      then:
+        script.execute: thermostaat
+
 
   - platform: template
     name: "Temp20 filtered"
