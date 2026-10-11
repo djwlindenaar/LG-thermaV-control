@@ -1,6 +1,6 @@
           lambda: !lambda |-
-            static const char*state_string[] = {"Idle", "Starting", "EarlyRun", "Running", "Defrosting", "Stopping", "Afterrun","Cooling"};
-            enum States {Idle ,  Starting ,  EarlyRun ,  Running ,  Defrosting ,  Stopping ,  Afterrun, Cooling};
+            static const char*state_string[] = {"Idle", "Starting", "EarlyRun", "Running", "Defrosting", "Stopping", "Afterrun","Cooling","PCtlCooling"};
+            enum States {Idle ,  Starting ,  EarlyRun ,  Running ,  Defrosting ,  Stopping ,  Afterrun, Cooling, CoolingPowerCtl};
             static States state = Idle;
             static States newstate = Idle;
             // mpa stands for minimum power avoidance
@@ -21,7 +21,12 @@
 
             timer += dt;
             if (timer < 60) { // we just got booted, let's take some time to figure out what's happening before taking action
-              if (id(compressor_running).state) {
+              if (strcmp(id(operation_mode).current_option(), "Cooling") == 0) {
+                if ((id(compressor_running).state) && (id(wp_target_power).state >= 0.05))
+                  newstate = state = CoolingPowerCtl;
+                else
+                  newstate = state = Cooling;
+              } else if (id(compressor_running).state) {
                 newstate = state = Running;
               } else {
                 if (id(water_temp_target_output).state > 20) // turn on if stooklijn asks more then absolute water minimum
@@ -34,17 +39,56 @@
               return;
             }
 
-            if (strcmp(id(operation_mode).current_option(), "Cooling") == 0)
-              newstate = state = Cooling;
 
 
             switch (state) {
               case Cooling:
-                //don't know yet what to do
+                // Cooling control only implemented for Target Power, otherwise manual operation possible
                 if (strcmp(id(operation_mode).current_option(), "Heating") == 0)
                   newstate = Idle;
+                if (id(wp_target_power).state >= 0.05) { //Target power requested
+                  newstate = CoolingPowerCtl;
+                  id(force_run_end).turn_off();
+                  id(modbus_enable_heat).turn_on();
+                  set_target_temp(18.0);
+                }
 
                 break;
+              case CoolingPowerCtl:
+                if (id(wp_target_power).state < 0.05) { //Target power to 0 
+                  set_target_temp(19);
+                  newstate = Cooling;
+                  id(modbus_enable_heat).turn_off();
+                } else { //Target power requested
+                  double target = 0.0;
+                  if (!(id(compressor_running).state)) { // Compressor not started. Need to set the target low enough to start the compressor
+                    target = (double)((id(water_temp_aanvoer).state + (C->water_hyst_neg)));
+                    set_target_temp(target);
+                    compressortime = timer;
+                  }
+                  else if (((timer - compressortime)> (15*60))) { // regular running phase
+                    /*
+                       assuming target COP is equal to current COP, we get: (t = target, a = actual, i = input, o = output)
+                       COPt = COPa
+                       Pt/(Tt-Ti) = Pa/(To-Ti)
+                       Pt*(To-Ti) = Pa*(Tt-Ti)
+                       Pt/Pa*(To-Ti) = (Tt-Ti)
+                       Pt/Pa*(To-Ti)+Ti = Tt
+                     */
+                    target = id(wp_target_power).state / (id(lg_total_active_power_filtered).state / (id(hp_temp_out).state-id(hp_temp_in).state)) + id(hp_temp_in).state;
+                    target = max(target, 12.0);
+                    target = min(target, 19.0);
+                  } else { // still in startup phase, target is stable
+                    target = id(water_temp_target_output).state;
+                  }
+
+                  // ensure we don't put the temperature so high it will turn off.
+                  target = min((double)((id(water_temp_aanvoer).state + (C->water_hyst_pos))), target);
+                  set_target_temp(target);
+
+                }
+                break;
+
               case Idle:
               //Nothing is going on, keep checking if something should be going on
                 if (id(thermostat_wp_heat).state) {
@@ -53,6 +97,9 @@
                   id(modbus_enable_heat).turn_on();
                   break;
                 }
+                // If the mode has switched to Cooling, we go to cooling operations. -- should this be a separate state machine? For now it's just other states. Also means we only switch from Idle to Cooling...
+                if (strcmp(id(operation_mode).current_option(), "Cooling") == 0)
+                  newstate = Cooling;
                 C->custom_idle_behavior();
                 break;
               case Starting:
@@ -110,7 +157,7 @@
                   double target = corrected_stooklijn + clamp((double)(id(thermostat_error).state * id(thermostat_error_gain).state), C->max_stooklijn_correction_neg, C->max_stooklijn_correction_pos);
                   bool minimum_run_time_passed = ((timer - compressortime) > (id(minimum_run_time).state*60));
 
-                  if (state == Running) { //only do minimum power stuff when running (and especially not when defrosting!)
+                  if ((state == Running) && (id(wp_target_power).state < 0.05)) { //only do minimum power stuff when running (and especially not when defrosting!) and not if there's a power target
                     switch (mpastate) {
                       case mpaIdle:
                         if ((id(compressor_speed).state <= 18) && (min(id(temp18_filtered).state,id(temp20_filtered).state) > -0.0)) { //compressor running at minimum speed and evaporator is not freezing!
@@ -158,6 +205,22 @@
                     newmpastate = mpaIdle;
                   else
                     target = mpatarget;
+                  
+                  if (id(wp_target_power).state >= 0.05) { //Target power requested
+                    /*
+                    assuming target COP is equal to current COP, we get:
+                    COPt = COPa
+                    Pt/(Tt-Ti) = Pa/(To-Ti)
+                    Pt*(To-Ti) = Pa*(Tt-Ti)
+                    Pt/Pa*(To-Ti) = (Tt-Ti)
+                    Pt/Pa*(To-Ti)+Ti = Tt
+                    */
+                    target = id(wp_target_power).state / (id(lg_total_active_power_filtered).state / (id(hp_temp_out).state-id(hp_temp_in).state)) + id(hp_temp_in).state;
+                    target = max(target, 20.0);
+                    target = min(target, 30.0);
+                  }
+
+                    
 
 
 
