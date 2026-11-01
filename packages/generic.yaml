@@ -10,6 +10,7 @@ esphome:
   includes:
     - customize/custom.h
     - customize/custom_${customize}.h
+    - customize/lookup.h
 
 
 esp32:
@@ -97,40 +98,52 @@ script:
       - delay: 1s
       - lambda: !lambda |-
           static bool switched = false;
+          static bool is_power_target = false;
           ESP_LOGD("Thermostaat", "T: %f, %f, ref: %f", id(huiskamer_lucht).state, (id(huiskamer_lucht).state-id(huiskamer_thermostaat_target).state), id(thermostat_wp_heat).state?0.5:0.0);
           ESP_LOGD("Thermostaat", "switched: %s, timer: %d", switched?"True":"False", id(thermostat_timer));
           
           if (id(wp_target_power).state > 0.05) {
+            is_power_target = true;
             if (!(id(thermostat_wp_heat).state)) {
               ESP_LOGD("Thermostaat", "Target power set, turn on the thermostaat");
               id(thermostat_wp_heat).turn_on();
               switched = false;
             }
-          } else {
-            if ((id(huiskamer_lucht).state-id(huiskamer_thermostaat_target).state) <= (id(thermostat_wp_heat).state?0.5:0.0)) {
-              ESP_LOGD("Thermostaat", "Thermostaat aan");
-              if (!(id(thermostat_wp_heat).state)) {
-                if (!switched) {
-                  switched = true;
-                  id(thermostat_timer) = 15; // minimum time thermostat heat ask before heat ask turned on?
-                }
-                if (id(thermostat_timer)==0) {
-                  id(thermostat_wp_heat).turn_on();
-                }
-              } else switched = false;
+          } else { // wp_target_power is 0
+            if (is_power_target) {
+              id(thermostat_wp_heat).turn_off();
             } else {
-              ESP_LOGD("Thermostaat", "Thermostaat uit");
-              if ((id(thermostat_wp_heat).state)) {
-                if (!switched) {
-                  switched = true;
-                  id(thermostat_timer) = 15; // minimum time thermostat stop-heat ask before heat ask turned on?
+              if ((id(huiskamer_lucht).state-id(huiskamer_thermostaat_target).state) <= (id(thermostat_wp_heat).state?0.5:0.0)) {
+                ESP_LOGD("Thermostaat", "Thermostaat aan");
+                if (!(id(thermostat_wp_heat).state)) {
+                  if (!switched) {
+                    switched = true;
+                    id(thermostat_timer) = 15; // minimum time thermostat heat ask before heat ask turned on?
+                  }
+                  if (id(thermostat_timer)==0) {
+                    id(thermostat_wp_heat).turn_on();
+                  }
+                } else switched = false;
+              } else {
+                if (id(stooklijn_target) >= 26.0) { // ugly hack moved out of the state_machine
+                  ESP_LOGD("Thermostaat", "Thermostaat aan gelaten");
+                } else {
+                  ESP_LOGD("Thermostaat", "Thermostaat uit");
+                  if ((id(thermostat_wp_heat).state)) {
+                    if (!switched) {
+                      switched = true;
+                      id(thermostat_timer) = 15; // minimum time thermostat stop-heat ask before heat ask turned on?
+                    }
+
+                    if (id(thermostat_timer)==0) {
+                      id(thermostat_wp_heat).turn_off();
+                    }
+                  } else switched = false;
                 }
-  
-                if (id(thermostat_timer)==0) {
-                  id(thermostat_wp_heat).turn_off();
-                }
-              } else switched = false;
+              }
             }
+            // wp_target_power is 0
+            is_power_target = false;
           }
 
 text_sensor:
@@ -317,7 +330,7 @@ sensor:
     unit_of_measurement: "°C"
     update_interval: 1s
     lambda: |-
-      if (id(api_id).is_connected(true))
+      if (id(api_id).is_connected())
         return id(huiskamer_lucht_hass).state;
       else
         return id(binnen_temp).state;
@@ -370,7 +383,7 @@ sensor:
     accuracy_decimals: 0
     update_interval: 5s
     lambda: |-
-        return (id(hp_temp_out).state - id(hp_temp_in).state) * id(current_flow_rate).state / 60.0 * 4168.0 * ((strcmp(id(operation_mode).current_option(), "Cooling") == 0) ? -1.0 : 1.0);
+        return (id(hp_temp_out).state - id(hp_temp_in).state) * id(current_flow_rate).state / 60.0 * 4168.0 * ((id(operation_mode).current_option() == "Cooling") ? -1.0 : 1.0);
 
   - platform: template
     name: "Heatpump COP"

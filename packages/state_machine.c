@@ -21,7 +21,7 @@
 
             timer += dt;
             if (timer < 60) { // we just got booted, let's take some time to figure out what's happening before taking action
-              if (strcmp(id(operation_mode).current_option(), "Cooling") == 0) {
+              if (id(operation_mode).current_option() == "Cooling") {
                 if ((id(compressor_running).state) && (id(wp_target_power).state >= 0.05))
                   newstate = state = CoolingPowerCtl;
                 else
@@ -35,7 +35,7 @@
                   newstate = state = Idle;
               }
 
-              ESP_LOGD(state_string[state], "Since: %ds", timer - statechange);
+              ESP_LOGD(state_string[state], "Since: %lus", timer - statechange);
               return;
             }
 
@@ -44,7 +44,7 @@
             switch (state) {
               case Cooling:
                 // Cooling control only implemented for Target Power, otherwise manual operation possible
-                if (strcmp(id(operation_mode).current_option(), "Heating") == 0)
+                if (id(operation_mode).current_option() == "Heating")
                   newstate = Idle;
                 if (id(wp_target_power).state >= 0.05) { //Target power requested
                   newstate = CoolingPowerCtl;
@@ -98,7 +98,7 @@
                   break;
                 }
                 // If the mode has switched to Cooling, we go to cooling operations. -- should this be a separate state machine? For now it's just other states. Also means we only switch from Idle to Cooling...
-                if (strcmp(id(operation_mode).current_option(), "Cooling") == 0)
+                if (id(operation_mode).current_option() == "Cooling")
                   newstate = Cooling;
                 C->custom_idle_behavior();
                 break;
@@ -217,7 +217,7 @@
                     */
                     target = id(wp_target_power).state / (id(lg_total_active_power_filtered).state / (id(hp_temp_out).state-id(hp_temp_in).state)) + id(hp_temp_in).state;
                     target = max(target, 20.0);
-                    target = min(target, 30.0);
+                    target = min(target, 40.0);
                   }
 
                     
@@ -230,7 +230,7 @@
                   ESP_LOGD(state_string[state], "Delta: %f, Stooklijn: %f, corrected stooklijn: %f, target: %f", delta, id(stooklijn_target), corrected_stooklijn, target);
   
                   // includes ugly hack so unit is not turned off when stooklijn_target is still high enough to keep house on target with minimum power
-                  if (((!id(thermostat_wp_heat).state) && minimum_run_time_passed && (id(stooklijn_target) < 26.0)) ||
+                  if (((!id(thermostat_wp_heat).state) && minimum_run_time_passed ) ||
                       (id(force_run_end).state)) {
                     id(modbus_enable_heat).turn_off();
                     id(force_run_end).turn_off();
@@ -298,9 +298,9 @@
               mpastate = newmpastate;
               mpatimer = timer;
             }
-            ESP_LOGD(mpa_state_string[mpastate], "Since: %ds", timer - mpatimer);
-            ESP_LOGD(state_string[state], "Since: %ds", timer - statechange);
-            if (id(compressor_running).state) ESP_LOGD(state_string[state], "Compressor running for: %02u:%02u:%02u", (timer - compressortime) / 3600, ((timer - compressortime) % 3600) / 60, (timer - compressortime) % 60);
+            ESP_LOGD(mpa_state_string[mpastate], "Since: %lus", timer - mpatimer);
+            ESP_LOGD(state_string[state], "Since: %lus", timer - statechange);
+            if (id(compressor_running).state) ESP_LOGD(state_string[state], "Compressor running for: %02lu:%02lu:%02lu", (timer - compressortime) / 3600, ((timer - compressortime) % 3600) / 60, (timer - compressortime) % 60);
             id(lg_controller_state).publish_state(state_string[state]);
             id(lg_mpa_controller_state).publish_state(mpa_state_string[mpastate]);
 

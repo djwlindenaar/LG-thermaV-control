@@ -16,10 +16,10 @@ packages:
 
 # Enable Home Assistant API
 api:
-#  encryption:
-#    key: !secret LG_therma_apikey
+  encryption:
+    key: !secret LG_therma_apikey
   id: api_id
-  password: ""
+#  password: ""
 
 one_wire:
   - platform: gpio
