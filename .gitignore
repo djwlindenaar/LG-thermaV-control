@@ -6,3 +6,4 @@
 *.swp
 *~
 packages/secrets.yaml
+modbustest.yaml
