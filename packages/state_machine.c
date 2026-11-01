@@ -161,8 +161,9 @@
               // To identify defrost has (recently) happened
                 if ((timer - statechange) > (8*60)) { // 8 minutes
                   newstate = Running;
-                  // no break, because the logic is still in Running
                 }
+                // no break, because the logic is still in Running
+                __attribute__((fallthrough));
               case Running:
               // Main Running behaviors
                 {
