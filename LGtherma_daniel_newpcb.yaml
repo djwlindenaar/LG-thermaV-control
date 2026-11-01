@@ -36,6 +36,13 @@ sensor:
     id: huiskamer_vloer
     entity_id: sensor.huiskamer_vloer
 
+  - platform: homeassistant
+    name: "Target Power"
+    id: wp_target_power
+    entity_id: input_number.wp_target_power
+    filters:
+      - multiply: 1000
+
   - platform: dallas_temp
     address: 0x1c44be571f64ff28
     id: hp_temp_out

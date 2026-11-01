@@ -33,6 +33,14 @@ sensor:
     lambda: |-
       return 20.0;
   - platform: template
+    name: "Target Power"
+    id: wp_target_power
+    unit_of_measurement: "W"
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: |-
+      return 0.0;
+  - platform: template
     id: hp_temp_out
     name: "Heatpump temp outflow"
     accuracy_decimals: 2
