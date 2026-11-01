@@ -7,3 +7,6 @@
 *~
 packages/secrets.yaml
 modbustest.yaml
+/.venv/
+__pycache__/
+*.py[cod]
