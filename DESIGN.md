@@ -209,6 +209,23 @@ The state machine changes the LG target only when the requested value differs
 from the current setting by more than 0.7 °C; the Modbus number's configured
 step is 0.1 °C.
 
+When `wp_target_power` changes during the `Running` state, the controller also
+uses the LG energy-state register to help ramp electrical power toward the
+new target:
+
+| Target change | Initial energy state | Within 500 W of target |
+| --- | ---: | ---: |
+| Down by 1000 W or more | ES8 | ES7 |
+| Down by at least 250 W but less than 1000 W | ES7 | ES7 |
+| Up by at least 250 W and no more than 1000 W | ES6 | ES6 |
+| Up by more than 1000 W | ES5 | ES6 |
+
+Once measured active power crosses the new target in the requested direction
+(at or below it for a reduction, at or above it for an increase), the
+controller selects ES2. Changes smaller than 250 W do not change the energy
+state. A further command received while running replaces any pending
+transition. Target changes outside `Running` do not start a transition.
+
 ### Minimum-power avoidance (MPA)
 
 During normal heating, when no target-power request is active, a nested

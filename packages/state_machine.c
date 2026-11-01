@@ -15,9 +15,34 @@
             static uint32_t mpatarget = 0;
             static uint32_t statechange = 0; //timer value upon previous state change
             static uint32_t compressortime = 0; //timer value on last compressor start
+            static bool power_target_initialized = false;
+            static float previous_power_target = 0.0f;
+            static bool power_target_transition_active = false;
+            static bool power_target_near_mode = false;
+            static bool power_target_increasing = false;
+            static int power_target_intermediate_energy_state = 2;
             static uint32_t dt = round(id(state_machine).get_update_interval()/1000);
             auto water_temp_call = id(water_temp_target_output).make_call();
+            auto set_energy_state = [&](int value) {
+              auto call = id(energy_state).make_call();
+              call.set_value(value);
+              call.perform();
+              ESP_LOGD("power_target", "Set energy state to ES%d", value);
+            };
             #define set_target_temp(x) if (abs(x-id(water_temp_target_output).state) > 0.7) {water_temp_call.set_value(round(x));water_temp_call.perform();ESP_LOGD("set_target_temp", "target set to: %f", round(x));}
+
+            const float requested_power = id(wp_target_power).state;
+            if (!isnan(requested_power) && !power_target_initialized) {
+              previous_power_target = requested_power;
+              power_target_initialized = true;
+            }
+            if (state != Running) {
+              power_target_transition_active = false;
+              if (!isnan(requested_power)) {
+                previous_power_target = requested_power;
+                power_target_initialized = true;
+              }
+            }
 
             timer += dt;
             if (timer < 60) { // we just got booted, let's take some time to figure out what's happening before taking action
@@ -141,6 +166,57 @@
               case Running:
               // Main Running behaviors
                 {
+                  if (state == Running && !isnan(requested_power) &&
+                      fabsf(requested_power - previous_power_target) > 0.5f) {
+                    const float power_change = requested_power - previous_power_target;
+                    previous_power_target = requested_power;
+                    power_target_transition_active = false;
+
+                    if (power_change <= -1000.0f) {
+                      power_target_increasing = false;
+                      power_target_intermediate_energy_state = 7;
+                      power_target_near_mode = false;
+                      power_target_transition_active = true;
+                      set_energy_state(8);
+                    } else if (power_change <= -250.0f) {
+                      power_target_increasing = false;
+                      power_target_intermediate_energy_state = 7;
+                      power_target_near_mode = false;
+                      power_target_transition_active = true;
+                      set_energy_state(7);
+                    } else if (power_change >= 250.0f && power_change <= 1000.0f) {
+                      power_target_increasing = true;
+                      power_target_intermediate_energy_state = 6;
+                      power_target_near_mode = false;
+                      power_target_transition_active = true;
+                      set_energy_state(6);
+                    } else if (power_change > 1000.0f) {
+                      power_target_increasing = true;
+                      power_target_intermediate_energy_state = 6;
+                      power_target_near_mode = false;
+                      power_target_transition_active = true;
+                      set_energy_state(5);
+                    }
+                  }
+
+                  if (state == Running && power_target_transition_active &&
+                      !isnan(requested_power)) {
+                    const float actual_power = id(lg_total_active_power).state;
+                    if (!isnan(actual_power)) {
+                      const bool target_reached = power_target_increasing
+                          ? actual_power >= requested_power
+                          : actual_power <= requested_power;
+                      if (target_reached) {
+                        set_energy_state(2);
+                        power_target_transition_active = false;
+                      } else if (!power_target_near_mode &&
+                                 fabsf(actual_power - requested_power) <= 500.0f) {
+                        set_energy_state(power_target_intermediate_energy_state);
+                        power_target_near_mode = true;
+                      }
+                    }
+                  }
+
                   // correct the stooklijn target based on flow rate. I noticed that the outflow temperature target of the heatpump
                   // is the same irrespective of the amount of flow. This doesn't make sense because at half the flow, half the heat
                   // is transferred (this is not completely accurate, but close enough).
@@ -305,4 +381,3 @@
             id(lg_mpa_controller_state).publish_state(mpa_state_string[mpastate]);
 
             return;
-
