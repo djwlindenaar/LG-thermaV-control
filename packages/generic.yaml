@@ -8,9 +8,9 @@ esphome:
           //Set initial states
 
   includes:
-    - customize/custom.h
-    - customize/custom_${customize}.h
-    - customize/lookup.h
+    - ../customize/custom.h
+    - ../customize/custom_${customize}.h
+    - ../customize/lookup.h
 
 
 esp32:
