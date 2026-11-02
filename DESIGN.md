@@ -225,6 +225,8 @@ Once measured active power crosses the new target in the requested direction
 controller selects ES2. Changes smaller than 250 W do not change the energy
 state. A further command received while running replaces any pending
 transition. Target changes outside `Running` do not start a transition.
+The controller also resets the energy state to ES2 while in `Idle`, `Starting`,
+or `Stopping`.
 
 ### Minimum-power avoidance (MPA)
 

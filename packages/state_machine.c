@@ -116,6 +116,8 @@
 
               case Idle:
               //Nothing is going on, keep checking if something should be going on
+                if (id(energy_state).state != 2)
+                  set_energy_state(2);
                 if (id(thermostat_wp_heat).state) {
                   newstate = Starting;
                   id(force_run_end).turn_off();
@@ -129,6 +131,8 @@
                 break;
               case Starting:
               //we want the compressor to start...
+                if (id(energy_state).state != 2)
+                  set_energy_state(2);
                 if (id(compressor_running).state) {
                   // apparently the compressor started..
                   compressortime = timer;
@@ -348,6 +352,8 @@
                 break;
               case Stopping:
               // We want the heatpump to shut down. heat/cool should be off, target temp at minimum (20C)
+                if (id(energy_state).state != 2)
+                  set_energy_state(2);
                 if (!id(compressor_running).state) {
                   newstate = Afterrun;
                   id(modbus_enable_heat).turn_on();
