@@ -34,6 +34,8 @@ enabling automatic control.
 | `customize/custom_daniel.h` | Daniel tuning and idle-pump policy. |
 | `customize/custom_marco.h` | Marco tuning and no-op idle policy. |
 | `customize/lookup.h` | Clamped, piecewise-linear lookup helper used for refrigerant estimates. |
+| `tools/steady_windows.py` | Offline analysis of the Home Assistant recorder: steady running windows, floor eps/UA and sensor offsets, for calibrating the power target parameters. |
+| `CLAUDE.md` | Working guide for coding agents: conventions, entity map, validation and deployment. |
 
 ## Configuration composition
 
@@ -134,7 +136,7 @@ LG heat-pump Modbus registers/coils ─┐
 Power-meter Modbus registers ────────┘                            │
                                                                   ├─> LG target/enable writes
 Home Assistant room/target inputs ────────────────────────────────┤
-1-Wire temperatures (where configured) ──────────────────────────┤
+1-Wire temperatures (display, cooling) ──────────────────────────┤
                                                                   └─> ESPHome API entities
 ```
 
@@ -285,6 +287,52 @@ is warm. `Power target state` shows Off / Increasing / Decreasing / Holding /
 Limited (compressor at 80 or more and still short) / Defrost / Waiting for model.
 
 The cooling power control still uses the earlier formula.
+
+### Observed heat pump behaviour
+
+These observations from the Daniel installation (Oct 27 – Nov 6 2026, HA
+recorder) are the basis for the power target design. Re-check them before
+changing the controller.
+
+**Plant speed.** A water setpoint change alone is slow. A +4 K step took about
+65 minutes to raise power from 960 W to about 1900 W. After an energy state
+returns to ES2, the LG keeps its compressor speed for about 5–25 minutes before
+it follows its own setpoint again. Any per-cycle recalculation of the setpoint
+from current power therefore fights the energy state and produces a swing of
+about one hour. The user rejected an integral term for the same reason.
+
+**Energy states** (holding register 9):
+
+| ES | Observed effect |
+| ---: | --- |
+| 2 | Normal operation. |
+| 5 | Drives the compressor to maximum quickly (29 → 85 in about 20 minutes). |
+| 6 | Moderate step up from low compressor speed (reaches about 35–47), sometimes after a delay of up to 17 minutes. No effect above about 55. |
+| 7 | Gentle decrease, about one compressor step per 2–3 minutes. |
+| 8 | Stopped the compressor within 70–100 s in all three tests, restarting at 30 after 3–6 minutes. Not used. |
+
+**Ceiling.** The highest draw seen was 3.87 kW at compressor 85, so targets
+above about 3.9 kW are not reachable. The controller then shows `Limited`.
+
+**Water temperature sensors.**
+
+- LG Modbus outlet/return: 0.35 K steps. During pump-only circulation outlet −
+  return averages −0.39 K (sd 0.33), constant over weather. This is the
+  `Water dT offset`.
+- 1-Wire probes (Daniel): they read low compared with the LG, and the error
+  grows as outdoor temperature falls (dT too high by 0.2–0.5 K at 13–15 °C,
+  1.4–1.6 K at 3–5 °C, mostly on the return probe). They lag 2–4 K after idle
+  periods. In 35 of 128 steady windows they gave eps ≥ 1, which is physically
+  impossible. Counter-evidence: COP/Carnot computed from the probes is steadier
+  (0.39–0.49) than from the LG pair (falls to about 0.25 at night and low
+  compressor speed). This is unresolved. The probe mounting is unknown.
+
+**Floor UA** (LG pair + 0.39 K, 128 steady 30-minute windows): median
+1690 W/K, IQR 1570–1840. It is about 1670 at 17 l/min and about 1865 above
+19 l/min. It drops to about 900 W/K when the floor surface is warm, because the
+floor sensor measures the surface and not the slab. Re-run
+`tools/steady_windows.py` to recalibrate; use the same sensor pair the
+controller uses.
 
 ### Minimum-power avoidance (MPA)
 
