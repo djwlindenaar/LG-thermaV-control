@@ -102,7 +102,7 @@ script:
           ESP_LOGD("Thermostaat", "T: %f, %f, ref: %f", id(huiskamer_lucht).state, (id(huiskamer_lucht).state-id(huiskamer_thermostaat_target).state), id(thermostat_wp_heat).state?0.5:0.0);
           ESP_LOGD("Thermostaat", "switched: %s, timer: %d", switched?"True":"False", id(thermostat_timer));
           
-          if (id(wp_target_power).state > 0.05) {
+          if (id(power_target_effective).state > 0.05) {
             is_power_target = true;
             if (!(id(thermostat_wp_heat).state)) {
               ESP_LOGD("Thermostaat", "Target power set, turn on the thermostaat");
@@ -154,6 +154,10 @@ text_sensor:
   - platform: template
     name: "LG MPA Controller state"
     id: lg_mpa_controller_state
+    update_interval: never
+  - platform: template
+    name: "Power target state"
+    id: power_target_state
     update_interval: never
 
 number:
@@ -273,6 +277,61 @@ number:
     restore_value: yes
     initial_value: 15
     unit_of_measurement: "min"
+    optimistic: true
+  - platform: template
+    mode: box
+    id: floor_ua
+    name: "Power target floor UA"
+    min_value: 200
+    max_value: 10000
+    step: 50
+    restore_value: yes
+    initial_value: ${floor_ua_initial}
+    unit_of_measurement: "W/K"
+    optimistic: true
+  - platform: template
+    mode: box
+    id: water_dt_offset
+    name: "Water dT offset"
+    min_value: -2
+    max_value: 2
+    step: 0.01
+    restore_value: yes
+    initial_value: 0.39
+    unit_of_measurement: "°C"
+    optimistic: true
+  - platform: template
+    mode: box
+    id: power_target_deadband
+    name: "Power target deadband"
+    min_value: 100
+    max_value: 1000
+    step: 50
+    restore_value: yes
+    initial_value: 300
+    unit_of_measurement: "W"
+    optimistic: true
+  - platform: template
+    mode: box
+    id: power_target_max_wtemp
+    name: "Power target maximum watertemperatuur"
+    min_value: 25
+    max_value: ${max_wtemp_custom}
+    step: 1
+    restore_value: yes
+    initial_value: 40
+    unit_of_measurement: "°C"
+    optimistic: true
+  - platform: template
+    mode: box
+    id: power_target_silent_limit
+    name: "Power target silent mode limit"
+    min_value: 0
+    max_value: 10000
+    step: 100
+    restore_value: yes
+    initial_value: 2000
+    unit_of_measurement: "W"
     optimistic: true
 #  - platform: template
 #    id: thermostat_off_delay
@@ -394,6 +453,59 @@ sensor:
     state_class: measurement
     lambda: |-
         return (id(water_power).state/id(lg_total_active_power).state);
+
+  - platform: template
+    name: "Target Power effective"
+    id: power_target_effective
+    unit_of_measurement: "W"
+    accuracy_decimals: 0
+    update_interval: 20s
+    lambda: |-
+        // drop the power target when Home Assistant is gone for 10 minutes, the normal thermostat takes over
+        static uint32_t last_connected = millis();
+        if (id(api_id).is_connected())
+          last_connected = millis();
+        if (isnan(id(wp_target_power).state) || ((millis() - last_connected) > 10*60*1000UL))
+          return 0.0;
+        return id(wp_target_power).state;
+
+  - platform: template
+    name: "Water dT corrected"
+    id: water_dt_corrected
+    unit_of_measurement: "°C"
+    accuracy_decimals: 2
+    update_interval: 20s
+    lambda: |-
+        // LG outlet - return, corrected for the return sensor bias
+        return (id(water_temp_aanvoer).state - id(water_temp_retour).state + id(water_dt_offset).state);
+    filters:
+      - sliding_window_moving_average:
+          window_size: 9
+          send_every: 1
+
+  - platform: template
+    name: "Floor heat exchanger efficiency"
+    id: floor_eps
+    accuracy_decimals: 3
+    update_interval: 20s
+    lambda: |-
+        // eps = 1 - exp(-UA / (m * cp)), share of (outlet - floor) the water gives off in the floor loop
+        const float mcp = id(current_flow_rate).state / 60.0 * 4168.0; // W/K
+        if (isnan(mcp) || (mcp < 300.0))
+          return NAN;
+        return 1.0 - expf(-id(floor_ua).state / mcp);
+
+  - platform: template
+    name: "Estimated floor temperature"
+    id: floor_temp_est
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: 20s
+    lambda: |-
+        // To - dT / eps, only meaningful while the compressor is heating
+        if (!id(compressor_running).state || id(defrosting).state || isnan(id(floor_eps).state) || !(id(water_dt_corrected).state > 0.5))
+          return NAN;
+        return id(water_temp_aanvoer).state - id(water_dt_corrected).state / id(floor_eps).state;
 
   - platform: template
     internal: True 

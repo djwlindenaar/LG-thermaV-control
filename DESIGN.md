@@ -209,24 +209,82 @@ The state machine changes the LG target only when the requested value differs
 from the current setting by more than 0.7 °C; the Modbus number's configured
 step is 0.1 °C.
 
-When `wp_target_power` changes during the `Running` state, the controller also
-uses the LG energy-state register to help ramp electrical power toward the
-new target:
+### Power target control
 
-| Target change | Initial energy state | Within 500 W of target |
-| --- | ---: | ---: |
-| Down by 1000 W or more | ES8 | ES7 |
-| Down by at least 250 W but less than 1000 W | ES7 | ES7 |
-| Up by at least 250 W and no more than 1000 W | ES6 | ES6 |
-| Up by more than 1000 W | ES5 | ES6 |
+When a power target is set, the controller works from the LG Modbus outlet and
+return temperatures, the LG flow rate and the power meter only. It does not use
+the 1-Wire probes or Home Assistant sensors. `Target Power effective` follows
+`wp_target_power`, but drops to 0 W when the Home Assistant API has been
+disconnected for 10 minutes; the normal thermostat then takes over.
 
-Once measured active power crosses the new target in the requested direction
-(at or below it for a reduction, at or above it for an increase), the
-controller selects ES2. Changes smaller than 250 W do not change the energy
-state. A further command received while running replaces any pending
-transition. Target changes outside `Running` do not start a transition.
-The controller also resets the energy state to ES2 while in `Idle`, `Starting`,
-or `Stopping`.
+**Plant model.** The floor loop is treated as a heat exchanger between the
+outlet water and the floor:
+
+```text
+Q   = eps · m·cp · (To − Tfloor)        eps = 1 − exp(−UA / m·cp)
+P   = Q / COP
+k_in = P / dT  (= m·cp / COP)            dT = To − Ti + offset
+```
+
+Keeping COP at its current value, the setpoint for target power `Pt` from the
+current operating point (`To`, `dT`, filtered power `P`) is:
+
+```text
+Tset = To + (Pt / P − 1) · dT / eps
+```
+
+The previous formula `Ti + Pt/P · dT` is the same expression with `eps = 1`.
+That version undershoots, and because it was recalculated every cycle it pulled
+the setpoint down while the compressor was still ramping up. If the current
+point can't be used (P ≤ 300 W or dT ≤ 1 K), the controller uses
+`Tset = Tfloor_est + Pt / (eps · k_in)` with the last valid floor estimate and
+`k_in`. If neither exists yet, it starts from the weather-curve target.
+
+**Sensors.** The LG return sensor reads about 0.39 K above the outlet sensor
+during pump-only circulation, so `Water dT offset` (default 0.39 K) is added to
+the LG dT, which is smoothed over 3 minutes. The 1-Wire probes were not used:
+their error grows with falling outdoor temperature (up to about 1.5 K on dT)
+and they produced `eps ≥ 1` in about a quarter of steady periods.
+
+**Setpoint.** The setpoint is calculated once when the target changes by
+100 W or more, and when power control starts in `Running` with a target
+already set. It is then held. When the LG has been in ES2 for 15 minutes and
+the outlet has moved less than 0.5 K over the last 15 minutes, the setpoint is
+re-trimmed toward the calculated value by at most 1 K. The setpoint is rounded
+to whole degrees and clamped to 20 °C – `Power target maximum
+watertemperatuur`.
+
+**Energy state.** This handles the fast part, using filtered power against the
+target:
+
+| Condition | Energy state |
+| --- | ---: |
+| More than the deadband short, and more than 800 W short or compressor above 45 | ES5 |
+| More than the deadband short otherwise (small step from low compressor speed) | ES6 |
+| More than the deadband over | ES7 |
+| Within the deadband (`Power target deadband`, default 300 W) | ES2 |
+
+ES8 is never used, because it stopped the compressor in every test. Leaving
+ES5/ES6/ES7 for ES2 happens immediately. Starting a new boost or reduction
+requires 5 minutes in ES2 first, so the LG can settle, except right after a
+target change. The direction (increase or decrease) only reverses through ES2.
+During defrost the energy state and setpoint are held, and the control
+continues afterwards. When the target returns to 0 or the run ends, ES2 is
+set.
+
+**Silent mode** is forced off in `EarlyRun` and `Running` while the target is
+above `Power target silent mode limit` (default 2000 W).
+
+**Calibration.** `Floor heat exchanger efficiency` (eps) and `Estimated floor
+temperature` are published. The Daniel profiles also publish `Floor UA
+measured`, a 30-minute average calculated from the floor sensor, for comparison
+with `Power target floor UA`. Its default comes from the `floor_ua_initial`
+substitution (1700 W/K, measured on the Daniel installation for Oct 27 – Nov 6).
+The floor sensor measures the surface, so the measured UA drops while the floor
+is warm. `Power target state` shows Off / Increasing / Decreasing / Holding /
+Limited (compressor at 80 or more and still short) / Defrost / Waiting for model.
+
+The cooling power control still uses the earlier formula.
 
 ### Minimum-power avoidance (MPA)
 
@@ -259,8 +317,8 @@ availability and plausibility before using it for automation.
 
 The ESPHome API exposes Modbus-backed LG controls and measurements, profile
 inputs, and template controls for thermostat target, weather curve settings,
-curve offset, error gain, minimum run time, minimum after-run time, force-run
-end, and restart. Controller and MPA state are published as text sensors.
+curve offset, error gain, minimum run time, minimum after-run time, power
+target parameters, force-run end, and restart. Controller and MPA state are published as text sensors.
 Wi-Fi signal and uptime are also published.
 
 The heating controller is scheduled every 20 seconds; a separate 60-second

@@ -4,6 +4,7 @@ substitutions:
   thermostat_step_size: "0.1"
   thermostat_initial_value: "19.0"
   max_wtemp_custom: "60.0"
+  floor_ua_initial: "1700" # W/K, see "Power target floor UA"
   GPIO_modbus_powermeter_tx: "GPIO22"
   GPIO_modbus_powermeter_rx: "GPIO23"
   GPIO_modbus_LG_tx: "GPIO18"
@@ -42,6 +43,27 @@ sensor:
     entity_id: input_number.wp_target_power
     filters:
       - multiply: 1000
+
+  - platform: template
+    name: "Floor UA measured"
+    id: floor_ua_measured
+    unit_of_measurement: "W/K"
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: |-
+      // UA from the floor sensor, 30 minute average while heating. Compare with "Power target floor UA".
+      if (!id(compressor_running).state || id(defrosting).state)
+        return NAN;
+      const float mcp = id(current_flow_rate).state / 60.0 * 4168.0; // W/K
+      const float eps = id(water_dt_corrected).state / (id(water_temp_aanvoer).state - id(huiskamer_vloer).state);
+      if (!(mcp > 300.0) || !(eps > 0.05) || !(eps < 0.98))
+        return NAN;
+      return -mcp * logf(1.0 - eps);
+    filters:
+      - filter_out: nan
+      - sliding_window_moving_average:
+          window_size: 30
+          send_every: 1
 
   - platform: dallas_temp
     address: 0x1c44be571f64ff28
