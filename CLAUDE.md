@@ -107,17 +107,20 @@ lives in `/config/home-assistant_v2.db`; open it read-only
 
 ## Validate, build, deploy
 
-- Validate in a throwaway venv (`pip install esphome`), from `/config/esphome`:
-  `esphome config lgtherma_daniel.yaml`. That wrapper includes this repo and
-  finds `/config/esphome/secrets.yaml`. To validate a profile directly,
-  temporarily copy `secrets.yaml` into the repo root (it is gitignored) and
-  delete it afterwards.
-- `esphome config` does not compile lambdas. A full compile is not possible in
-  the Claude Code add-on (Alpine/musl; the ESP-IDF toolchain needs glibc). The
-  user builds and flashes from the ESPHome dashboard. If a compile attempt
-  creates `/data/.cache/esphome` or `/config/esphome/.esphome`, remove them.
+- On the Daniel Home Assistant host, build through the ESPHome add-on with
+  `/config/scripts/esphome validate|compile lgtherma_daniel.yaml` (see
+  `/config/CLAUDE.md`). `lgtherma_daniel.yaml` in `/config/esphome` is a wrapper
+  that includes this repo's profile. Validate and compile are safe to run at
+  any time and catch C++ errors in the lambdas. `upload` flashes the heat pump
+  controller and needs the user's confirmation every time.
+- Without the add-on: validate in a throwaway venv (`pip install esphome`),
+  `esphome config <profile>.yaml`, with `secrets.yaml` temporarily copied into
+  the repo root (it is gitignored). That does not compile lambdas, and the
+  ESP-IDF toolchain does not run in the Alpine-based Claude Code add-on. If an
+  attempt creates `/data/.cache/esphome` or `/config/esphome/.esphome`, remove
+  them.
 - Known existing failure: the Marco and new-PCB profiles use `api: password:`,
   which ESPHome 2026.1 removed. Strip that line in a temporary copy to validate
   the rest.
-- The dashboard builds whatever branch is checked out in this repo. Do work on a
+- The builder compiles whatever branch is checked out in this repo. Do work on a
   branch; commit or push only when the user asks.
