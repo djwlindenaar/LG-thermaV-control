@@ -277,6 +277,18 @@ set.
 **Silent mode** is forced off in `EarlyRun` and `Running` while the target is
 above `Power target silent mode limit` (default 2000 W).
 
+**Silent mode kick (experimental, Nov 2026).** Toggling silent mode is reported
+to make the LG reset its internal controller, which could break the stalls
+described under "The LG's own compressor model". The history has no case that
+shows this either way. When power is outside the deadband, the controller
+inverts silent mode for `Power target silent kick time` (default 60 s, 0 turns
+it off) and then restores it. This happens on a new target (at most one kick
+per 5 minutes) and after every 15 minutes continuously outside the deadband.
+It runs only in `Running` and not while the evaporator is freezing
+(`temp18`/`temp20` ≤ 0). During the kick `Power target state` shows
+`Silent kick`. Judge it from the compressor speed in the minutes after each
+kick, then keep it, tune the time, or set it to 0.
+
 **Calibration.** `Floor heat exchanger efficiency` (eps) and `Estimated floor
 temperature` are published. The Daniel profiles also publish `Floor UA
 measured`, a 30-minute average calculated from the floor sensor, for comparison
@@ -284,7 +296,8 @@ with `Power target floor UA`. Its default comes from the `floor_ua_initial`
 substitution (1700 W/K, measured on the Daniel installation for Oct 27 – Nov 6).
 The floor sensor measures the surface, so the measured UA drops while the floor
 is warm. `Power target state` shows Off / Increasing / Decreasing / Holding /
-Limited (compressor at 80 or more and still short) / Defrost / Waiting for model.
+Limited (compressor at 80 or more and still short) / Silent kick / Defrost /
+Waiting for model.
 
 The cooling power control still uses the earlier formula.
 
@@ -313,6 +326,51 @@ about one hour. The user rejected an integral term for the same reason.
 
 **Ceiling.** The highest draw seen was 3.87 kW at compressor 85, so targets
 above about 3.9 kW are not reachable. The controller then shows `Limited`.
+
+**The LG's own compressor model.** Analysed on Aug–Nov 2024 (recorder database
+in the `core_2024.8.1` backup) and Aug–Nov 2026. In settled operation with
+silent mode off, compressor speed follows the setpoint and outdoor temperature,
+not the outlet error:
+
+    model speed ≈ 15.6 + 1.54 × (water setpoint − outdoor temperature)
+
+This explains R² 0.66 of settled speeds (sd ±3.5); setpoint − outlet explains
+none. The LG accepts a 2–4 K outlet shortfall for hours, and the compressor
+stays put whatever is written: 13 Oct 2026 at 35, 6 Nov at 52–57, 7 Nov
+13:22–15:16 at 52–54 through ES5, ES7 and setpoints of 28–33 °C. It is not a
+write rate limit: on 13 Oct nothing was written for two hours. Silent mode caps
+the compressor at about 30. Turning it off lets the compressor jump to its own
+demand (37–47) within about 3 minutes, never higher.
+
+*Upward* (378 setpoint increases, no ES active): the compressor only responds
+when the setpoint is above the outlet **and** the model speed for the new
+setpoint is at least about 12 steps above the current speed. That held for 63%
+of 30 steps (median +8); otherwise 4–8% responded. Example: going from 52 at
+10 °C outside needs a model speed of about 64, so a setpoint of about 41.5 °C.
+ES5 is not covered by this rule. It worked 3 of 3 times with setpoint − outlet
+≥ 5 K and 1 of 4 times at about 3 K; the 7 Nov 12:46 success and 13:46 failure
+had the same model headroom.
+
+*Downward* (setpoint decreases ≥ 40 min after start, no stop): the compressor
+only comes down when the outlet is above the setpoint by 0.5 K or more. With the
+setpoint at or above the outlet it practically never drops, however far the
+model speed is below. When the outlet is above the setpoint, the speed of
+descent depends on how far the compressor is above the model speed:
+
+| Compressor − model speed | No ES (drop in 20 min) | ES7 |
+| --- | --- | --- |
+| > 20 | 42% drop ≥ 5, median −4 | 100%, median −24 |
+| 6–20 | 86–97%, median −31 to −35 | few cases |
+| < 6 | 39–44%, median −4 | 25–62%, median −3 to −6 |
+
+ES7 on its own is a slow creep. It mainly helps when the compressor is far
+above the model speed.
+
+*Self-stops* with heat still enabled happen in two situations. At minimum speed
+(about 20), the LG stops when the outlet reaches the setpoint. With the outlet
+2.1–3.4 K above the setpoint it sometimes stops at 23–46, though many such cases
+in 2024 kept running. The `outlet + water_hyst_neg + 1` floor (outlet − 3 K for
+Daniel) sits right in that zone.
 
 **Water temperature sensors.**
 

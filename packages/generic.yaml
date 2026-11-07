@@ -333,6 +333,17 @@ number:
     initial_value: 2000
     unit_of_measurement: "W"
     optimistic: true
+  - platform: template
+    mode: box
+    id: power_target_kick_time
+    name: "Power target silent kick time"
+    min_value: 0
+    max_value: 300
+    step: 20
+    restore_value: yes
+    initial_value: 60
+    unit_of_measurement: "s"
+    optimistic: true
 #  - platform: template
 #    id: thermostat_off_delay
 #    name: "thermostat off delay"

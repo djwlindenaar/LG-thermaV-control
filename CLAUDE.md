@@ -99,6 +99,7 @@ added in Nov 2026 have the `warmtepomp_lgtherma_` prefix.
 | `power_target_deadband` | `number.warmtepomp_lgtherma_power_target_deadband` |
 | `power_target_max_wtemp` | `number.warmtepomp_lgtherma_power_target_maximum_watertemperatuur` |
 | `power_target_silent_limit` | `number.warmtepomp_lgtherma_power_target_silent_mode_limit` |
+| `power_target_kick_time` | `number.warmtepomp_lgtherma_power_target_silent_kick_time` (expected; check after flashing) |
 
 The `power_target` debug log lines (setpoint calculation, re-trim, ES, power
 every cycle) only show in the ESPHome device log, not in HA. Recorder history

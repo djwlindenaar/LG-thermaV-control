@@ -28,6 +28,10 @@
             static uint32_t pt_es_since = 0;      // timer value of last energy state change
             static uint32_t pt_trim_time = 0;     // timer value of last setpoint calculation or steadiness reset
             static float pt_trim_to = NAN;        // outlet temperature at pt_trim_time, to detect a steady LG
+            static uint32_t pt_off_since = 0;     // timer value since power is continuously outside the deadband
+            static uint32_t pt_kick_until = 0;    // silent mode kick runs until this timer value, 0 = no kick
+            static uint32_t pt_kick_last = 0;     // timer value of the last kick start
+            static bool pt_kick_restore = false;  // silent mode state to restore after the kick
             const char *pt_status = "Off";
 
             static uint32_t dt = round(id(state_machine).get_update_interval()/1000);
@@ -67,6 +71,13 @@
               pt_es = 2;
               if (id(energy_state).state != 2)
                 set_energy_state(2);
+              if (pt_kick_until != 0) { // end a running kick, the normal silent mode logic takes over from here
+                if (pt_kick_restore)
+                  id(modbus_set_silent_mode).turn_on();
+                else
+                  id(modbus_set_silent_mode).turn_off();
+                pt_kick_until = 0;
+              }
             }
 
             timer += dt;
@@ -279,11 +290,14 @@
                       pt_active = true;
                       pt_es = isnan(id(energy_state).state) ? 2 : (int) id(energy_state).state;
                       pt_es_since = timer;
+                      pt_off_since = timer;
                     }
+                    bool pt_new_target = false;
                     if (isnan(pt_target) || (fabsf(requested_power - pt_target) >= 100.0f)) {
                       pt_target = requested_power;
                       pt_calc_pending = true;
                       pt_step = true;
+                      pt_new_target = true;
                     }
 
                     if (state == Running) { // during defrost the measurements are meaningless, keep everything as is
@@ -334,7 +348,25 @@
                       if (pt_es == es_wanted)
                         pt_step = false; // a target step keeps skipping the settle time until it is acted on
 
-                      if (pt_es == 5 || pt_es == 6)
+                      // silent mode kick: briefly toggling silent mode is reported to make the LG re-evaluate its
+                      // compressor speed (experimental, see DESIGN.md). On a new target, and after every 15 minutes
+                      // continuously outside the deadband. Not while the evaporator is freezing.
+                      if (fabsf(err) <= deadband)
+                        pt_off_since = timer;
+                      const uint32_t kick_time = (uint32_t) id(power_target_kick_time).state;
+                      if ((kick_time > 0) && (pt_kick_until == 0) && (fabsf(err) > deadband) &&
+                          (min(id(temp18_filtered).state, id(temp20_filtered).state) > 0.0f) &&
+                          ((pt_new_target && ((timer - pt_kick_last) >= 5*60)) || ((timer - pt_off_since) >= 15*60))) {
+                        pt_kick_restore = id(modbus_set_silent_mode).state;
+                        pt_kick_until = timer + kick_time;
+                        pt_kick_last = timer;
+                        pt_off_since = timer;
+                        ESP_LOGD("power_target", "Silent kick: silent mode %s for %lus", pt_kick_restore ? "off" : "on", (unsigned long) kick_time);
+                      }
+
+                      if (pt_kick_until != 0)
+                        pt_status = "Silent kick";
+                      else if (pt_es == 5 || pt_es == 6)
                         pt_status = (id(compressor_speed).state >= 80) ? "Limited" : "Increasing";
                       else if (pt_es == 7)
                         pt_status = "Decreasing";
@@ -384,17 +416,30 @@
   
                   //Silent mode logic.
                   const bool pt_no_silent = pt_active && (requested_power > id(power_target_silent_limit).state);
-                  if (pt_no_silent || (id(lg_total_active_power).state > 1200) || (min(id(temp18_filtered).state,id(temp20_filtered).state) < -0.0)) {
-                    // high power target -- silent mode limits the compressor
-                    // high power -- efficiency gain is not significant, then COP is better with silent mode off
-                    // temp20 -- if the evaporator is freezing, silent mode off helps
-                    ESP_LOGD(state_string[state], "silent mode off: Power %f, temp20: %f", id(lg_total_active_power).state, id(temp20_filtered).state);
-                    id(modbus_set_silent_mode).turn_off();
-                  }
-                  if (!pt_no_silent && (id(lg_total_active_power).state < 1000) && (max(id(temp18_filtered).state, id(temp20_filtered).state) > 0.0) && (state != Defrosting)) {
-                    // low power -- efficiency gain is interesting, but only if the evaporator is not close to freezing
-                    ESP_LOGD(state_string[state], "silent mode on: Power %f, temp20: %f", id(lg_total_active_power).state, id(temp20_filtered).state);
-                    id(modbus_set_silent_mode).turn_on();
+                  if (pt_kick_until != 0) {
+                    // silent mode kick in progress: hold the toggled state, then restore it
+                    const bool kick_silent = (timer < pt_kick_until) ? !pt_kick_restore : pt_kick_restore;
+                    if (id(modbus_set_silent_mode).state != kick_silent) {
+                      if (kick_silent)
+                        id(modbus_set_silent_mode).turn_on();
+                      else
+                        id(modbus_set_silent_mode).turn_off();
+                    }
+                    if (timer >= pt_kick_until)
+                      pt_kick_until = 0;
+                  } else {
+                    if (pt_no_silent || (id(lg_total_active_power).state > 1200) || (min(id(temp18_filtered).state,id(temp20_filtered).state) < -0.0)) {
+                      // high power target -- silent mode limits the compressor
+                      // high power -- efficiency gain is not significant, then COP is better with silent mode off
+                      // temp20 -- if the evaporator is freezing, silent mode off helps
+                      ESP_LOGD(state_string[state], "silent mode off: Power %f, temp20: %f", id(lg_total_active_power).state, id(temp20_filtered).state);
+                      id(modbus_set_silent_mode).turn_off();
+                    }
+                    if (!pt_no_silent && (id(lg_total_active_power).state < 1000) && (max(id(temp18_filtered).state, id(temp20_filtered).state) > 0.0) && (state != Defrosting)) {
+                      // low power -- efficiency gain is interesting, but only if the evaporator is not close to freezing
+                      ESP_LOGD(state_string[state], "silent mode on: Power %f, temp20: %f", id(lg_total_active_power).state, id(temp20_filtered).state);
+                      id(modbus_set_silent_mode).turn_on();
+                    }
                   }
                 }
                 break;
