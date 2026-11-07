@@ -108,7 +108,7 @@ lives in `/config/home-assistant_v2.db`; open it read-only
 ## Validate, build, deploy
 
 - On the Daniel Home Assistant host, build through the ESPHome add-on with
-  `/config/scripts/esphome validate|compile lgtherma_daniel.yaml` (see
+  `/config/scripts/esphome validate|compile|status lgtherma_daniel.yaml` (see
   `/config/CLAUDE.md`). `lgtherma_daniel.yaml` in `/config/esphome` is a wrapper
   that includes this repo's profile. Validate and compile are safe to run at
   any time and catch C++ errors in the lambdas. `upload` flashes the heat pump
