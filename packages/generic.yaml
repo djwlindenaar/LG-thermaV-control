@@ -335,14 +335,57 @@ number:
     optimistic: true
   - platform: template
     mode: box
-    id: power_target_kick_time
-    name: "Power target silent kick time"
+    id: power_target_brake_hold
+    name: "Power target silent brake minimum time"
     min_value: 0
-    max_value: 300
+    max_value: 600
     step: 20
     restore_value: yes
-    initial_value: 60
+    initial_value: 120
     unit_of_measurement: "s"
+    optimistic: true
+  - platform: template
+    mode: box
+    id: power_target_boost_margin
+    name: "Power target boost margin"
+    min_value: 0
+    max_value: 40
+    step: 1
+    restore_value: yes
+    initial_value: 12
+    optimistic: true
+  - platform: template
+    mode: box
+    id: power_target_pump_dt
+    name: "Power target pump dT"
+    min_value: 2
+    max_value: 10
+    step: 0.1
+    restore_value: yes
+    initial_value: 5.3
+    unit_of_measurement: "°C"
+    optimistic: true
+  - platform: template
+    mode: box
+    id: power_target_min_flow
+    name: "Power target minimum flow"
+    min_value: 5
+    max_value: 60
+    step: 0.5
+    restore_value: yes
+    initial_value: 17
+    unit_of_measurement: "L/min"
+    optimistic: true
+  - platform: template
+    mode: box
+    id: power_target_max_flow
+    name: "Power target maximum flow"
+    min_value: 5
+    max_value: 80
+    step: 0.5
+    restore_value: yes
+    initial_value: 35
+    unit_of_measurement: "L/min"
     optimistic: true
 #  - platform: template
 #    id: thermostat_off_delay

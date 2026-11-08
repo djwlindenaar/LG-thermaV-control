@@ -23,15 +23,18 @@
             static bool pt_step = false;          // new target: skip the ES2 settle time
             static float pt_setpoint = NAN;       // held water setpoint
             static float pt_floor_est = NAN;      // last valid estimated floor temperature
-            static float pt_kin = NAN;            // last valid electrical power per K water dT (W/K)
             static int pt_es = 2;                 // energy state requested by the power controller
             static uint32_t pt_es_since = 0;      // timer value of last energy state change
             static uint32_t pt_trim_time = 0;     // timer value of last setpoint calculation or steadiness reset
             static float pt_trim_to = NAN;        // outlet temperature at pt_trim_time, to detect a steady LG
-            static uint32_t pt_off_since = 0;     // timer value since power is continuously outside the deadband
-            static uint32_t pt_kick_until = 0;    // silent mode kick runs until this timer value, 0 = no kick
-            static uint32_t pt_kick_last = 0;     // timer value of the last kick start
-            static bool pt_kick_restore = false;  // silent mode state to restore after the kick
+            static bool pt_boost = false;         // boost setpoint active, to get the LG compressor moving on a step up
+            static float pt_boost_sp = NAN;       // boost setpoint, fixed at the start of the step
+            static uint32_t pt_boost_since = 0;   // timer value of the boost start
+            static bool pt_brake = false;         // silent mode held on to bring the compressor down
+            static uint32_t pt_brake_since = 0;   // timer value of the brake start
+            static float pt_cmp_hist[3] = {NAN, NAN, NAN}; // compressor speed of the last three runs, oldest first
+            static uint32_t pt_defrost_seen = 0;  // timer value of the last run in Defrosting
+            static float run_floor_sp = NAN;      // outlet - 3 K setpoint floor, follows a rising outlet at once and a falling one slowly
             const char *pt_status = "Off";
 
             static uint32_t dt = round(id(state_machine).get_update_interval()/1000);
@@ -44,21 +47,30 @@
             };
             #define set_target_temp(x) if (fabs((x)-id(water_temp_target_output).state) > 0.7) {water_temp_call.set_value(round(x));water_temp_call.perform();ESP_LOGD("set_target_temp", "target set to: %f", round(x));}
 
-            // Setpoint that gives power pt, from the current operating point (see DESIGN.md):
-            //   Tset = To + (Pt/P - 1) * dT / eps
-            // falls back to the last floor estimate when the current point is not usable (low power or dT).
-            auto pt_feedforward = [&](float pt) -> float {
-              const float to = id(water_temp_aanvoer).state;
-              const float dtw = id(water_dt_corrected).state;
-              const float p = id(lg_total_active_power_filtered).state;
-              const float eps = id(floor_eps).state;
-              if (isnan(eps) || isnan(to))
+            // Steady-state setpoint that gives electrical power pt (see DESIGN.md "Power target control"):
+            // floor temperature from the current operating point, heat Q from the COP model, flow from the
+            // pump's dT control (between minimum and maximum flow), outlet from the floor heat exchanger.
+            // The COP depends on the outlet, so iterate.
+            auto pt_model = [&](float pt) -> float {
+              const float tf = isnan(id(floor_temp_est).state) ? pt_floor_est : id(floor_temp_est).state;
+              const float tout = id(buiten_temp).state;
+              const float ua = id(floor_ua).state;
+              const float pump_dt = id(power_target_pump_dt).state;
+              if (isnan(tf) || isnan(tout) || isnan(ua) || !(pump_dt > 0.0f))
                 return NAN;
-              if (!isnan(p) && !isnan(dtw) && (p > 300.0f) && (dtw > 1.0f))
-                return to + (pt / p - 1.0f) * dtw / eps;
-              if (!isnan(pt_floor_est) && !isnan(pt_kin))
-                return pt_floor_est + pt / (eps * pt_kin);
-              return NAN;
+              const float sil = (pt < 1000.0f) ? 1.0f : 0.0f; // silent mode below 1 kW, see the silent mode logic
+              const float mmin = id(power_target_min_flow).state / 60.0f * 4168.0f;
+              const float mmax = max(id(power_target_max_flow).state / 60.0f * 4168.0f, mmin);
+              float to = tf + 5.0f;
+              for (int i = 0; i < 6; i++) {
+                const float per_w = max(C->cop_q + C->cop_lift * (to - tout), 0.05f); // 1 / compressor COP
+                const float q = (pt - C->cop_base_w - C->cop_silent_w * sil) / per_w;
+                if (!(q > 0.0f))
+                  return tf;
+                const float mcp = clamp(q / pump_dt, mmin, mmax);
+                to = tf + q / ((1.0f - expf(-ua / mcp)) * mcp);
+              }
+              return to;
             };
 
             const float requested_power = id(power_target_effective).state;
@@ -69,15 +81,10 @@
               pt_calc_pending = false;
               pt_setpoint = NAN;
               pt_es = 2;
+              pt_boost = false;
+              pt_brake = false; // the normal silent mode logic takes over from here
               if (id(energy_state).state != 2)
                 set_energy_state(2);
-              if (pt_kick_until != 0) { // end a running kick, the normal silent mode logic takes over from here
-                if (pt_kick_restore)
-                  id(modbus_set_silent_mode).turn_on();
-                else
-                  id(modbus_set_silent_mode).turn_off();
-                pt_kick_until = 0;
-              }
             }
 
             timer += dt;
@@ -182,7 +189,8 @@
 
                 // set temperature high enough so compressor will start
                 //set_target_temp(id(water_temp_aanvoer).state + 3.0); // old fixed hysteresis
-                set_target_temp(id(water_temp_aanvoer).state + (C->water_hyst_pos + 1.0));
+                // the LG does not accept less than 20, writing less makes it rewrite every run
+                set_target_temp(max(20.0f, id(water_temp_aanvoer).state + (C->water_hyst_pos + 1.0f)));
                 break;
               case EarlyRun:
               // Heatpump operates along a predefined behavior. Just wait until it's done and keep the target as low as possible to limit overshoot
@@ -197,7 +205,7 @@
                   break;
                 } else {
                   // set_target_temp(id(water_temp_aanvoer).state - 3.0); // old fixed hysteresis
-                  set_target_temp(id(water_temp_aanvoer).state + (C->water_hyst_neg + 1.0));
+                  set_target_temp(max(20.0f, id(water_temp_aanvoer).state + (C->water_hyst_neg + 1.0f)));
                 }
                 break;
               case Defrosting:
@@ -286,11 +294,13 @@
                     const float to = id(water_temp_aanvoer).state;
                     const float deadband = id(power_target_deadband).state;
 
+                    const float p_raw = id(lg_total_active_power).state;
+                    const float cmp = id(compressor_speed).state;
+
                     if (!pt_active) { // power target active at start of Running, or just set: handle as a step
                       pt_active = true;
                       pt_es = isnan(id(energy_state).state) ? 2 : (int) id(energy_state).state;
                       pt_es_since = timer;
-                      pt_off_since = timer;
                     }
                     bool pt_new_target = false;
                     if (isnan(pt_target) || (fabsf(requested_power - pt_target) >= 100.0f)) {
@@ -299,29 +309,30 @@
                       pt_step = true;
                       pt_new_target = true;
                     }
+                    if (state == Defrosting)
+                      pt_defrost_seen = timer;
 
                     if (state == Running) { // during defrost the measurements are meaningless, keep everything as is
                       if (!isnan(id(floor_temp_est).state))
                         pt_floor_est = id(floor_temp_est).state;
-                      if ((p > 300.0f) && (dtw > 1.0f))
-                        pt_kin = p / dtw;
 
                       if (pt_calc_pending) {
-                        const float sp = pt_feedforward(pt_target);
+                        const float sp = pt_model(pt_target);
                         if (!isnan(sp)) {
                           pt_setpoint = sp;
                           pt_calc_pending = false;
                           pt_trim_time = timer;
                           pt_trim_to = to;
-                          ESP_LOGD("power_target", "Target %.0f W at %.0f W: setpoint %.1f", pt_target, p, sp);
+                          ESP_LOGD("power_target", "Target %.0f W at %.0f W: setpoint %.1f (floor %.1f, outdoor %.1f)", pt_target, p, sp,
+                                   isnan(id(floor_temp_est).state) ? pt_floor_est : id(floor_temp_est).state, id(buiten_temp).state);
                         }
                       } else if (fabsf(to - pt_trim_to) >= 0.5f) {
                         // outlet still moving, the LG is not steady yet
                         pt_trim_time = timer;
                         pt_trim_to = to;
-                      } else if ((pt_es == 2) && ((timer - pt_es_since) >= 15*60) && ((timer - pt_trim_time) >= 15*60)) {
+                      } else if ((pt_es == 2) && !pt_boost && ((timer - pt_es_since) >= 15*60) && ((timer - pt_trim_time) >= 15*60)) {
                         // LG steady in ES2: move the setpoint at most 1 K toward the calculated value
-                        const float sp = pt_feedforward(requested_power);
+                        const float sp = pt_model(requested_power);
                         if (!isnan(sp) && !isnan(pt_setpoint)) {
                           pt_setpoint += clamp(sp - pt_setpoint, -1.0f, 1.0f);
                           ESP_LOGD("power_target", "Re-trim at %.0f W: calculated %.1f, setpoint %.1f", p, sp, pt_setpoint);
@@ -348,24 +359,56 @@
                       if (pt_es == es_wanted)
                         pt_step = false; // a target step keeps skipping the settle time until it is acted on
 
-                      // silent mode kick: briefly toggling silent mode is reported to make the LG re-evaluate its
-                      // compressor speed (experimental, see DESIGN.md). On a new target, and after every 15 minutes
-                      // continuously outside the deadband. Not while the evaporator is freezing.
-                      if (fabsf(err) <= deadband)
-                        pt_off_since = timer;
-                      const uint32_t kick_time = (uint32_t) id(power_target_kick_time).state;
-                      if ((kick_time > 0) && (pt_kick_until == 0) && (fabsf(err) > deadband) &&
-                          (min(id(temp18_filtered).state, id(temp20_filtered).state) > 0.0f) &&
-                          ((pt_new_target && ((timer - pt_kick_last) >= 5*60)) || ((timer - pt_off_since) >= 15*60))) {
-                        pt_kick_restore = id(modbus_set_silent_mode).state;
-                        pt_kick_until = timer + kick_time;
-                        pt_kick_last = timer;
-                        pt_off_since = timer;
-                        ESP_LOGD("power_target", "Silent kick: silent mode %s for %lus", pt_kick_restore ? "off" : "on", (unsigned long) kick_time);
+                      // boost: on a step up, raise the setpoint until the LG's own compressor estimate
+                      // (lg_cmp_a + lg_cmp_b * (setpoint - outdoor)) is boost_margin above the current speed. The LG only
+                      // speeds up the compressor for such a gap. Ends once power is near the target.
+                      const float boost_margin = id(power_target_boost_margin).state;
+                      if (pt_new_target) {
+                        pt_boost = false;
+                        if ((boost_margin > 0.0f) && (requested_power > p + deadband) && !isnan(cmp)) {
+                          const float sp_b = max(id(buiten_temp).state + (cmp + boost_margin - C->lg_cmp_a) / C->lg_cmp_b, to + 1.0f);
+                          if (!isnan(sp_b) && (isnan(pt_setpoint) || (sp_b > pt_setpoint + 0.5f))) {
+                            pt_boost = true;
+                            pt_boost_sp = sp_b;
+                            pt_boost_since = timer;
+                            ESP_LOGD("power_target", "Boost: setpoint %.1f for compressor %.0f + %.0f", sp_b, cmp, boost_margin);
+                          }
+                        }
+                      } else if (pt_boost && ((p_raw >= requested_power - deadband / 2) || ((timer - pt_boost_since) >= 30*60))) {
+                        pt_boost = false;
+                        ESP_LOGD("power_target", "Boost ended at %.0f W after %lus", p_raw, (unsigned long) (timer - pt_boost_since));
                       }
 
-                      if (pt_kick_until != 0)
-                        pt_status = "Silent kick";
+                      // brake: hold silent mode on to bring the compressor down, on a step down and when the
+                      // compressor runs away upward above the target. Released at the target, after the minimum time.
+                      // Not right after a start or a defrost (their own ramps), nor while the evaporator is freezing.
+                      const uint32_t brake_hold = (uint32_t) id(power_target_brake_hold).state;
+                      const bool brake_allowed = (brake_hold > 0) && (min(id(temp18_filtered).state, id(temp20_filtered).state) > 0.0f);
+                      if (!pt_brake) {
+                        const char *why = nullptr;
+                        if (pt_new_target && (requested_power < p - deadband))
+                          why = "step down";
+                        else if ((err < -deadband) && ((timer - compressortime) >= 15*60) && ((timer - pt_defrost_seen) >= 10*60) &&
+                                 !isnan(pt_cmp_hist[0]) && (cmp - pt_cmp_hist[0] >= 6.0f))
+                          why = "runaway";
+                        if (brake_allowed && (why != nullptr)) {
+                          pt_brake = true;
+                          pt_brake_since = timer;
+                          ESP_LOGD("power_target", "Brake on (%s): power %.0f W, target %.0f W, compressor %.0f", why, p, requested_power, cmp);
+                        }
+                      } else if (!brake_allowed || (pt_new_target && (requested_power > p_raw)) ||
+                                 (((timer - pt_brake_since) >= brake_hold) && (p_raw <= requested_power + deadband / 2))) {
+                        pt_brake = false;
+                        ESP_LOGD("power_target", "Brake off after %lus: power %.0f W, compressor %.0f", (unsigned long) (timer - pt_brake_since), p_raw, cmp);
+                      }
+                      pt_cmp_hist[0] = pt_cmp_hist[1];
+                      pt_cmp_hist[1] = pt_cmp_hist[2];
+                      pt_cmp_hist[2] = cmp;
+
+                      if (pt_brake)
+                        pt_status = "Braking";
+                      else if (pt_boost)
+                        pt_status = "Boosting";
                       else if (pt_es == 5 || pt_es == 6)
                         pt_status = (id(compressor_speed).state >= 80) ? "Limited" : "Increasing";
                       else if (pt_es == 7)
@@ -375,6 +418,8 @@
                       ESP_LOGD("power_target", "Target %.0f W, power %.0f W, ES%d, setpoint %.1f", requested_power, p, pt_es, pt_setpoint);
                     } else {
                       pt_status = "Defrost";
+                      pt_brake = false; // no silent mode during defrost
+                      pt_cmp_hist[0] = pt_cmp_hist[1] = pt_cmp_hist[2] = NAN;
                     }
                     if (id(energy_state).state != pt_es)
                       set_energy_state(pt_es);
@@ -382,9 +427,17 @@
                     if (isnan(pt_setpoint))
                       pt_setpoint = target; // no usable model yet, start from the stooklijn
                     pt_setpoint = clamp((float) round(pt_setpoint), 20.0f, (float) id(power_target_max_wtemp).state);
-                    target = pt_setpoint;
+                    target = pt_boost ? clamp((float) round(max(pt_setpoint, pt_boost_sp)), 20.0f, (float) id(power_target_max_wtemp).state) : pt_setpoint;
                   }
                   double delta = id(water_temp_aanvoer).state - target;
+
+                  // floor of the setpoint below the outlet: follows a rising outlet at once and a falling one at
+                  // 0.15 K/min, so the 0.7 K steps of the outlet sensor do not make the setpoint flicker
+                  const float floor_now = id(water_temp_aanvoer).state + (C->water_hyst_neg + 1.0f);
+                  if (isnan(run_floor_sp) || (floor_now > run_floor_sp))
+                    run_floor_sp = floor_now;
+                  else
+                    run_floor_sp = max(floor_now, run_floor_sp - 0.05f);
 
                   ESP_LOGD(state_string[state], "Delta: %f, Stooklijn: %f, corrected stooklijn: %f, target: %f", delta, id(stooklijn_target), corrected_stooklijn, target);
   
@@ -407,7 +460,7 @@
                   if (delta > 0) { //if the temperature is overshooting, don't pull down by reducing the target. But never lower than hysteresis below actual...
                     //set_target_temp(max((id(water_temp_aanvoer).state - 3.0), (target - delta)));
                     //set_target_temp(max((id(water_temp_aanvoer).state - 3.0), (target)));// old fixed hysteresis
-                    set_target_temp(max((id(water_temp_aanvoer).state + (C->water_hyst_neg + 1.0)), (target)));
+                    set_target_temp(max((double) run_floor_sp, target));
                   } else {
                     set_target_temp(target);
                   }
@@ -415,18 +468,14 @@
                   id(watertemp_target).publish_state(target);
   
                   //Silent mode logic.
-                  const bool pt_no_silent = pt_active && (requested_power > id(power_target_silent_limit).state);
-                  if (pt_kick_until != 0) {
-                    // silent mode kick in progress: hold the toggled state, then restore it
-                    const bool kick_silent = (timer < pt_kick_until) ? !pt_kick_restore : pt_kick_restore;
-                    if (id(modbus_set_silent_mode).state != kick_silent) {
-                      if (kick_silent)
-                        id(modbus_set_silent_mode).turn_on();
-                      else
-                        id(modbus_set_silent_mode).turn_off();
-                    }
-                    if (timer >= pt_kick_until)
-                      pt_kick_until = 0;
+                  // silent mode off for a high power target, and while the power controller pushes upward
+                  // (silent mode caps the compressor at about 1 kW)
+                  const bool pt_no_silent = pt_active && ((requested_power > id(power_target_silent_limit).state) ||
+                                            ((pt_boost || (pt_es == 5) || (pt_es == 6)) && (requested_power > 1000)));
+                  if (pt_brake) {
+                    // brake: silent mode held on until the power controller releases it
+                    if (!id(modbus_set_silent_mode).state)
+                      id(modbus_set_silent_mode).turn_on();
                   } else {
                     if (pt_no_silent || (id(lg_total_active_power).state > 1200) || (min(id(temp18_filtered).state,id(temp20_filtered).state) < -0.0)) {
                       // high power target -- silent mode limits the compressor

@@ -6,6 +6,13 @@ Customize::Customize()
     max_stooklijn_correction_pos = 4.0;
     max_stooklijn_correction_neg = -10.0;
     base_stooklijn_flow = 17.5;
+    // power target model (fitted on 313 steady windows Oct-Nov 2026)
+    cop_base_w = 346.7;
+    cop_q = 0.0300;
+    cop_lift = 0.00869;
+    cop_silent_w = -231.4;
+    lg_cmp_a = 15.6;
+    lg_cmp_b = 1.54;
 }
 
 void Customize::custom_idle_behavior()

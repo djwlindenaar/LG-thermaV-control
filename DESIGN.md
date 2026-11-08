@@ -220,27 +220,39 @@ the 1-Wire probes or Home Assistant sensors. `Target Power effective` follows
 disconnected for 10 minutes; the normal thermostat then takes over.
 
 **Plant model.** The floor loop is treated as a heat exchanger between the
-outlet water and the floor:
+outlet water and the floor, fed by a pump in ΔT control:
 
 ```text
-Q   = eps · m·cp · (To − Tfloor)        eps = 1 − exp(−UA / m·cp)
-P   = Q / COP
-k_in = P / dT  (= m·cp / COP)            dT = To − Ti + offset
+Q    = eps · m·cp · (To − Tfloor)       eps = 1 − exp(−UA / m·cp)
+m·cp = clamp(Q / ΔTpump, m_min·cp, m_max·cp)
+P    = Pbase + Q · (a + b · (To − Toutdoor)) + Psilent · silent
 ```
 
-Keeping COP at its current value, the setpoint for target power `Pt` from the
-current operating point (`To`, `dT`, filtered power `P`) is:
+The pump holds the water ΔT at `Power target pump dT` (5.3 K including the
+0.39 K offset) by changing flow between `Power target minimum flow` (17 L/min)
+and `Power target maximum flow` (35 L/min). Below about 1.25 kW the flow sits at
+the minimum and ΔT varies; above it extra heat comes mostly from extra flow and
+the outlet rises slowly. The electrical model has a fixed base load and a
+compressor COP that falls with the lift between outlet and outdoor temperature;
+silent mode saves about 230 W at the same heat. Its constants are per
+installation (`cop_*` in `customize/custom_<profile>.h`), fitted on 313 steady
+20-minute windows of Oct – Nov 2026 (rms 102 W).
 
-```text
-Tset = To + (Pt / P − 1) · dT / eps
-```
+The setpoint for target power `Pt` takes the floor temperature from the current
+operating point (`Estimated floor temperature` = To − dT / eps, or the last valid
+value), then iterates: heat from the electrical model at the current outlet
+guess, flow from the pump rule, outlet from the heat exchanger. Silent mode is
+assumed on for targets below 1 kW.
 
-The previous formula `Ti + Pt/P · dT` is the same expression with `eps = 1`.
-That version undershoots, and because it was recalculated every cycle it pulled
-the setpoint down while the compressor was still ramping up. If the current
-point can't be used (P ≤ 300 W or dT ≤ 1 K), the controller uses
-`Tset = Tfloor_est + Pt / (eps · k_in)` with the last valid floor estimate and
-`k_in`. If neither exists yet, it starts from the weather-curve target.
+Backtest on pairs of steady windows at most 3 hours apart with at least 300 W
+between them (predict the second window's outlet from the first window's
+operating point and the second's power): mean absolute error 0.56 K, against
+1.75 K for the previous formula `To + (Pt/P − 1) · dT / eps` (above 1.5 kW:
+0.70 against 2.85 K). With the COP model fitted on October only, November pairs
+gave 0.51 against 1.31 K. The previous formula kept COP and flow at their
+current values, so from a low-power point (high COP, minimum flow) it
+overestimated every step: on 8 Nov it asked 34 °C for 2 kW at 10:45 and then
+33 °C for 2.75 kW at 11:00, where about 30 and 31 were right.
 
 **Sensors.** The LG return sensor reads about 0.39 K above the outlet sensor
 during pump-only circulation, so `Water dT offset` (default 0.39 K) is added to
@@ -254,7 +266,25 @@ already set. It is then held. When the LG has been in ES2 for 15 minutes and
 the outlet has moved less than 0.5 K over the last 15 minutes, the setpoint is
 re-trimmed toward the calculated value by at most 1 K. The setpoint is rounded
 to whole degrees and clamped to 20 °C – `Power target maximum
-watertemperatuur`.
+watertemperatuur`. Above about 1.25 kW, 1 K is about 350–400 W, more than the
+deadband, so the energy state bridges the remaining gap.
+
+**Boost.** The model setpoint is where the LG should settle, but the LG only
+speeds the compressor up when its own speed estimate for the setpoint is well
+above the current speed (see "The LG's own compressor model"). On a step up of
+more than the deadband the controller therefore writes a boost setpoint of
+`Toutdoor + (compressor + boost margin − 15.6) / 1.54`, at least outlet + 1 K,
+when that is above the model setpoint. `Power target boost margin` defaults to
+12 compressor steps (0 turns the boost off). The boost is fixed at the start of
+the step and ends when the meter shows the target minus half the deadband, or
+after 30 minutes; the model setpoint then applies again.
+
+**Setpoint floor.** When the outlet is above the target, the written setpoint is
+kept at least at outlet + `water_hyst_neg` + 1 (outlet − 3 K for Daniel). The
+floor follows a rising outlet immediately and a falling one at 0.15 K/min, so
+the 0.7 K steps of the outlet sensor no longer make the setpoint flicker
+between two values. `Starting` and `EarlyRun` never write less than 20 °C, the
+LG minimum (writing less made it rewrite every run).
 
 **Energy state.** This handles the fast part, using filtered power against the
 target:
@@ -275,19 +305,28 @@ continues afterwards. When the target returns to 0 or the run ends, ES2 is
 set.
 
 **Silent mode** is forced off in `EarlyRun` and `Running` while the target is
-above `Power target silent mode limit` (default 2000 W).
+above `Power target silent mode limit` (default 2000 W), and while the
+controller pushes upward (boost, ES5 or ES6) to a target above 1 kW, because
+silent mode caps the compressor at about 1 kW.
 
-**Silent mode kick (experimental, Nov 2026).** Toggling silent mode is reported
-to make the LG reset its internal controller, which could break the stalls
-described under "The LG's own compressor model". The history has no case that
-shows this either way. When power is outside the deadband, the controller
-inverts silent mode for `Power target silent kick time` (default 60 s, 0 turns
-it off) and then restores it. This happens on a new target (at most one kick
-per 5 minutes) and after every 15 minutes continuously outside the deadband.
-It runs only in `Running` and not while the evaporator is freezing
-(`temp18`/`temp20` ≤ 0). During the kick `Power target state` shows
-`Silent kick`. Judge it from the compressor speed in the minutes after each
-kick, then keep it, tune the time, or set it to 0.
+**Silent brake.** Silent mode on pulls a running compressor down within a minute
+(85 → 56 on 8 Nov 12:00), much faster than ES7. The controller holds it on:
+
+- on a step down of more than the deadband;
+- when the compressor runs away upward: power more than the deadband above the
+  target and the compressor up 6 or more within a minute. Not in the first 15
+  minutes after a compressor start or 10 minutes after a defrost, whose own
+  ramps silent mode does not cap.
+
+The brake is released when the meter shows at most the target plus half the
+deadband, but not before `Power target silent brake minimum time` (default
+120 s, 0 turns the brake off), or at once on a new step up. It is not used while
+the evaporator is freezing (`temp18`/`temp20` ≤ 0) and ends at a defrost. Every
+release lets the LG pick its own speed again, which can start a new runaway;
+the runaway check then brakes again. The brake replaced a 60 s silent mode kick
+(c474b38, 7–8 Nov 2026) that toggled silent mode regardless of direction: it
+turned silent mode on during a step up, and its release at 11:46 on 8 Nov let
+the compressor run from 46 to 85 against a 0.75 kW target.
 
 **Calibration.** `Floor heat exchanger efficiency` (eps) and `Estimated floor
 temperature` are published. The Daniel profiles also publish `Floor UA
@@ -295,9 +334,11 @@ measured`, a 30-minute average calculated from the floor sensor, for comparison
 with `Power target floor UA`. Its default comes from the `floor_ua_initial`
 substitution (1700 W/K, measured on the Daniel installation for Oct 27 – Nov 6).
 The floor sensor measures the surface, so the measured UA drops while the floor
-is warm. `Power target state` shows Off / Increasing / Decreasing / Holding /
-Limited (compressor at 80 or more and still short) / Silent kick / Defrost /
-Waiting for model.
+is warm. `Power target state` shows Off / Boosting / Braking / Increasing /
+Decreasing / Holding / Limited (compressor at 80 or more and still short) /
+Defrost / Waiting for model. The `power_target` lines in the device log give the
+model setpoint with its floor and outdoor temperature, and each boost and brake
+start and end with its reason.
 
 The cooling power control still uses the earlier formula.
 
@@ -371,6 +412,31 @@ above the model speed.
 2.1–3.4 K above the setpoint it sometimes stops at 23–46, though many such cases
 in 2024 kept running. The `outlet + water_hyst_neg + 1` floor (outlet − 3 K for
 Daniel) sits right in that zone.
+
+**Pump ΔT control.** Since 2026 the pump runs in ΔT control (kept for its COP at
+low power). In the 2026 data, above the minimum flow of about 17 L/min the water
+ΔT stays at 5.3–5.5 K while flow rises with the compressor (18–20 L/min at
+compressor 38, 23–27 at 48, 32–40 at 54, where ΔT falls to about 3 K). In 2024
+the flow was fixed at about 17.2 L/min. Flow follows the compressor with a lag of
+about 2.5 minutes, so flow is an effect of the LG's choice, not a cause. It
+therefore correlates strongly with compressor speed (adding it to the speed
+model raises R² from 0.66 to 0.93) without predicting it.
+
+**Silent mode release and runaways** (56 silent on → off transitions while
+running, 2024 and 2026). Most releases change nothing. Three times the
+compressor ran away upward while the outlet was already above the setpoint:
+31 Oct 13:53 (to 75), 6 Nov 10:34 (to 77) and 8 Nov 11:47 (to 85). The jumps to
+80 in 2024 and on 6 Nov 04:35 were defrosts. On 8 Nov the compressor moved first
+(37 s after the release, flow still flat); the setpoint had been 4–6 K above the
+outlet for half an hour before, the largest accumulated shortfall of all
+releases. On 7 Nov 14:34 the same situation (long shortfall, then setpoint
+33 → 28 with ES7) without a release gave a slow decrease. This fits a stored
+shortfall inside the LG that steady running holds back and a release lets out,
+but a release on 8 Nov 11:02 with a smaller shortfall did nothing, and the
+31 Oct and 6 Nov runaways followed an hour of outlet *above* the setpoint. Those
+two first held a plateau for 8–9 minutes, then the pump raised flow (ΔT above
+target) and the compressor followed, so there may be a second path through the
+flow. Open question; the runaway check in the brake covers both.
 
 **Water temperature sensors.**
 
@@ -457,6 +523,10 @@ hardware.
   `input_number.wp_target_power` entity whose value is expressed in kW.
 - Confirm that any selected profile provides all IDs referenced by shared
   package lambdas before building.
+- The power target COP model (`cop_*`) and the LG compressor speed estimate
+  behind the boost (15.6 + 1.54 × (setpoint − outdoor)) are fitted on the Daniel
+  installation; the speed estimate dates from fixed-flow operation. Check boost
+  size and model setpoints against the first optimizer runs (Nov 2026).
 - No automated unit or hardware-in-the-loop tests are present in the tracked
   project files. Use ESPHome configuration validation, inspect live telemetry,
   and verify control actions on the actual installation.

@@ -13,7 +13,7 @@ pump behaviour it is based on. This file covers how to work on the code.
 | LG registers, coils, LG-based sensors | `packages/LGheatpump.yaml` |
 | Power meter registers | `packages/Powermeter.yaml` |
 | Per-installation inputs (HA sensors, 1-Wire), substitutions, pins | `LGtherma_*.yaml` |
-| Per-installation constants and idle behaviour (`C->...`) | `customize/custom_<profile>.h` |
+| Per-installation constants (incl. power target COP model) and idle behaviour (`C->...`) | `customize/custom_<profile>.h` |
 | Recalibrating floor UA / dT offset from recorder data | `tools/steady_windows.py` |
 
 When behaviour changes, update the matching section of `DESIGN.md` too.
@@ -99,7 +99,10 @@ added in Nov 2026 have the `warmtepomp_lgtherma_` prefix.
 | `power_target_deadband` | `number.warmtepomp_lgtherma_power_target_deadband` |
 | `power_target_max_wtemp` | `number.warmtepomp_lgtherma_power_target_maximum_watertemperatuur` |
 | `power_target_silent_limit` | `number.warmtepomp_lgtherma_power_target_silent_mode_limit` |
-| `power_target_kick_time` | `number.warmtepomp_lgtherma_power_target_silent_kick_time` |
+| `power_target_brake_hold` | `number.warmtepomp_lgtherma_power_target_silent_brake_minimum_time` |
+| `power_target_boost_margin` | `number.warmtepomp_lgtherma_power_target_boost_margin` |
+| `power_target_pump_dt` | `number.warmtepomp_lgtherma_power_target_pump_dt` |
+| `power_target_min_flow` / `power_target_max_flow` | `number.warmtepomp_lgtherma_power_target_minimum_flow` / `..._maximum_flow` |
 
 The `power_target` debug log lines (setpoint calculation, re-trim, ES, power
 every cycle) only show in the ESPHome device log, not in HA. Recorder history
