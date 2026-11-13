@@ -266,7 +266,18 @@ already set. It is then held. When the LG has been in ES2 for 15 minutes and
 the outlet has moved less than 0.5 K over the last 15 minutes, the setpoint is
 re-trimmed toward the calculated value by at most 1 K. The setpoint is rounded
 to whole degrees and clamped to 20 °C – `Power target maximum
-watertemperatuur`. Above about 1.25 kW, 1 K is about 350–400 W, more than the
+watertemperatuur`.
+
+**Outlet lead.** The calculated setpoint is where the outlet settles once the
+floor has warmed up, which can be well above the outlet early in a run. The LG
+accumulates setpoint − outlet: a setpoint the outlet does not reach builds up a
+shortfall that it lets out as a runaway (9 Nov 12:26 at 0.7 K, 10 Nov 04:46 at
+5–6 K, below), and a setpoint at the outlet lets the compressor sink to its
+minimum (9 Nov 23:39). The written setpoint is therefore at most the outlet
+plus a lead that depends on the energy state, rounded down: 1.5 K in ES5,
+0.5 K in ES2, 0 in ES7. It follows the outlet up until it reaches the
+calculated setpoint. The boost is exempt, and during defrost the last value is
+held. Above about 1.25 kW, 1 K is about 350–400 W, more than the
 deadband, so the energy state bridges the remaining gap.
 
 **Boost.** The model setpoint is where the LG should settle, but the LG only
@@ -278,6 +289,12 @@ when that is above the model setpoint. `Power target boost margin` defaults to
 12 compressor steps (0 turns the boost off). The boost is fixed at the start of
 the step and ends when the meter shows the target minus half the deadband, or
 after 30 minutes; the model setpoint then applies again.
+
+On Daniel the boost margin is 0 (boost off) since 13 Nov. On 13 Nov 12:00–13:30
+boost setpoints 3–7 K above the outlet did not move the compressor (38–44) for
+90 minutes; at 13:31 ES5 came on and it went 45 → 85 in 4 minutes. On 12 Nov a
+2-minute boost to 33 at the start of `Running` preceded a runaway to 92. Both
+fit the stored-shortfall pattern (below).
 
 **Setpoint floor.** When the outlet is above the target, the written setpoint is
 kept at least at outlet + `water_hyst_neg` + 1 (outlet − 3 K for Daniel). The
@@ -291,10 +308,36 @@ target:
 
 | Condition | Energy state |
 | --- | ---: |
-| More than the deadband short, and more than 800 W short or compressor above 45 | ES5 |
-| More than the deadband short otherwise (small step from low compressor speed) | ES6 |
+| More than the deadband short | ES5 |
 | More than the deadband over | ES7 |
 | Within the deadband (`Power target deadband`, default 300 W) | ES2 |
+
+Below 750 W (filtered) the shortfall threshold is 100 W instead of the
+deadband: there the compressor runs at or near its minimum speed (15, about
+540 W) with a poor COP (2.05 against 2.6 at about 1 kW, night of 9 Nov at 1–2 °C). On
+9 Nov the deadband let a 750 W target run at 540 W for 81 minutes.
+
+ES6 is not used (since 13 Nov). It was meant for small steps from a low
+compressor speed, but between 10 and 13 Nov it never moved the compressor: 66
+minutes at 15 (12 Nov 01:12, 517 W against 750 W), 2 hours at 44 (12 Nov
+03:00, 1.94 kW against 2.5 kW) and 2 hours at 38–44 (13 Nov 11:15).
+
+The compressor sits on a few speeds (about 15, 27, 36, 45, 55, 64, 73, 85, 92
+in these runs) and rarely moves to the next one on ES5 alone: on 11 Nov
+02:00–06:30 ES5 held 47 (2.1 kW against 2.5 kW) for 4.5 hours with the
+setpoint capped at outlet + 1.5 K. Open problem.
+
+**Stuck energy state.** When ES5/ES6 or ES7 has been active for 15 minutes and
+is still wanted, the LG is holding the compressor against the setpoint and the
+energy state alone does not reach the target. The setpoint then steps 1 K in
+that direction, every 15 minutes while it lasts, relative to the outlet
+(rounded down): down for ES7 but not below outlet − 1 K, up for ES5 from at
+least the outlet and not past outlet + 1.5 K. Not during a boost or a brake. On
+12 Nov, ES7 steps took the setpoint to 21 with the outlet at 23.5; afterwards
+four upward steps (an hour at 517 W) were needed before it was above the outlet
+again. On
+9 Nov this would have ended 45 minutes at 3.7 kW against 2.5 kW (ES7) and
+47 minutes stuck at 2.0 kW (ES5, outlet 30.8 above setpoint 30).
 
 ES8 is never used, because it stopped the compressor in every test. Leaving
 ES5/ES6/ES7 for ES2 happens immediately. Starting a new boost or reduction
@@ -306,7 +349,7 @@ set.
 
 **Silent mode** is forced off in `EarlyRun` and `Running` while the target is
 above `Power target silent mode limit` (default 2000 W), and while the
-controller pushes upward (boost, ES5 or ES6) to a target above 1 kW, because
+controller pushes upward (boost or ES5) to a target above 1 kW, because
 silent mode caps the compressor at about 1 kW.
 
 **Silent brake.** Silent mode on pulls a running compressor down within a minute
@@ -314,14 +357,22 @@ silent mode caps the compressor at about 1 kW.
 
 - on a step down of more than the deadband;
 - when the compressor runs away upward: power more than the deadband above the
-  target and the compressor up 6 or more within a minute. Not in the first 15
-  minutes after a compressor start or 10 minutes after a defrost, whose own
-  ramps silent mode does not cap.
+  target and the compressor 10 or more above its lowest speed of the last
+  5 minutes. Not in the first 15 minutes after a compressor start or 10 minutes
+  after a defrost, whose own ramps silent mode does not cap. A runaway brake
+  also lowers the setpoint to 1 K below the old value and not above the outlet
+  (rounded down), so the LG has no demand left to climb toward when the brake
+  releases. Before this (9 Nov 12:29–12:46) every release after 120 s started
+  the same climb again, and the 1-minute check missed the third one.
 
 The brake is released when the meter shows at most the target plus half the
 deadband, but not before `Power target silent brake minimum time` (default
-120 s, 0 turns the brake off), or at once on a new step up. It is not used while
-the evaporator is freezing (`temp18`/`temp20` ≤ 0) and ends at a defrost. Every
+120 s, 0 turns the brake off), or at once on a new step up. A step down is not braked while the evaporator
+is freezing (`temp18`/`temp20` ≤ 0); a runaway is, because the runaway itself
+chills the evaporator. On 12 Nov `temp18` went below 0 at 10:52 with 5.7 °C
+outdoor, which blocked the brake, and the compressor stayed at 76–92
+(3.5–4.4 kW against 2.5 kW) for 30 minutes, with the setpoint 1–3 K below the
+outlet. The brake ends at a defrost. Every
 release lets the LG pick its own speed again, which can start a new runaway;
 the runaway check then brakes again. The brake replaced a 60 s silent mode kick
 (c474b38, 7–8 Nov 2026) that toggled silent mode regardless of direction: it
@@ -437,6 +488,23 @@ but a release on 8 Nov 11:02 with a smaller shortfall did nothing, and the
 two first held a plateau for 8–9 minutes, then the pump raised flow (ΔT above
 target) and the compressor followed, so there may be a second path through the
 flow. Open question; the runaway check in the brake covers both.
+
+On 9 Nov a re-trim raised the setpoint from 29 to 30 at 11:58 with the outlet at
+29.3 and power just under the 2.5 kW target. After 25 minutes below the
+setpoint (and flow rising from 23 to 30 L/min from 12:17) the compressor
+stepped 56 → 66 → 72 → 76 → 85 within 3 minutes, with silent mode off and no
+release involved. Silent mode brought it back to 56 within a minute three
+times; each release after 120 s gave the same staircase. This is the
+stored-shortfall pattern without a release, hence the outlet lead limit.
+
+On 10 Nov (2.5 kW target, 0 °C) a defrost came right at the start of `Running`.
+Afterwards the calculated setpoint of 29 was written with the outlet at
+23–24; the compressor went 66 → 105 within 5 minutes and on to 126 (4.7 kW)
+over 20 minutes. ES7 from 04:51 did not slow it; the runaway check was still
+in its post-defrost window and the brake was blocked by the freezing
+evaporator. The stuck-state step lowered the setpoint to 28 only at 05:06, and
+the run ended in a second defrost. With the outlet lead the setpoint would have
+been 24–25 (ES2) and the outlet at most (ES7).
 
 **Water temperature sensors.**
 

@@ -32,8 +32,15 @@
             static uint32_t pt_boost_since = 0;   // timer value of the boost start
             static bool pt_brake = false;         // silent mode held on to bring the compressor down
             static uint32_t pt_brake_since = 0;   // timer value of the brake start
-            static float pt_cmp_hist[3] = {NAN, NAN, NAN}; // compressor speed of the last three runs, oldest first
+            static float pt_cmp_hist[15];         // compressor speed of the last 15 runs (5 minutes), oldest first
+            static bool pt_cmp_hist_init = false;
+            if (!pt_cmp_hist_init) {
+              for (float &v : pt_cmp_hist) v = NAN;
+              pt_cmp_hist_init = true;
+            }
+            static uint32_t pt_stuck_time = 0;    // timer value of the last setpoint step for a stuck energy state
             static uint32_t pt_defrost_seen = 0;  // timer value of the last run in Defrosting
+            static float pt_out_cap = NAN;        // written setpoint at most this (outlet + lead for the energy state)
             static float run_floor_sp = NAN;      // outlet - 3 K setpoint floor, follows a rising outlet at once and a falling one slowly
             const char *pt_status = "Off";
 
@@ -83,6 +90,7 @@
               pt_es = 2;
               pt_boost = false;
               pt_brake = false; // the normal silent mode logic takes over from here
+              pt_out_cap = NAN;
               if (id(energy_state).state != 2)
                 set_energy_state(2);
             }
@@ -331,7 +339,8 @@
                         pt_trim_time = timer;
                         pt_trim_to = to;
                       } else if ((pt_es == 2) && !pt_boost && ((timer - pt_es_since) >= 15*60) && ((timer - pt_trim_time) >= 15*60)) {
-                        // LG steady in ES2: move the setpoint at most 1 K toward the calculated value
+                        // LG steady in ES2: move the setpoint at most 1 K toward the calculated value. How far the
+                        // written setpoint may run ahead of the outlet is limited by pt_out_cap below.
                         const float sp = pt_model(requested_power);
                         if (!isnan(sp) && !isnan(pt_setpoint)) {
                           pt_setpoint += clamp(sp - pt_setpoint, -1.0f, 1.0f);
@@ -343,9 +352,12 @@
 
                       // energy state from filtered power against the target
                       const float err = requested_power - p;
+                      // below 750 W the compressor is at or near its minimum speed, where the COP is poor
+                      // (DESIGN.md): there any shortfall of more than 100 W counts, not only one past the deadband
+                      const float deadband_up = (p < 750.0f) ? min(deadband, 100.0f) : deadband;
                       int es = 2;
-                      if (err > deadband)
-                        es = ((err > 800.0f) || (id(compressor_speed).state > 45)) ? 5 : 6; // ES6 does nothing above ~55
+                      if (err > deadband_up)
+                        es = 5; // ES6 did not move the compressor at 15 or at 38-44 (DESIGN.md, 10-13 Nov)
                       else if (err < -deadband)
                         es = 7; // ES8 stops the compressor, never use it
                       const int es_wanted = es;
@@ -358,6 +370,25 @@
                       }
                       if (pt_es == es_wanted)
                         pt_step = false; // a target step keeps skipping the settle time until it is acted on
+
+                      // stuck: the energy state alone has not reached the target in 15 minutes (the LG holds the
+                      // compressor against the setpoint). Step the setpoint 1 K in that direction every 15 minutes,
+                      // relative to the outlet: down not below outlet - 1 K, up from at least the outlet and not past
+                      // the ES5 lead above it. A setpoint far below the outlet only delays the next step up.
+                      if ((pt_es != 2) && (pt_es == es_wanted) && !pt_boost && !pt_brake && !isnan(pt_setpoint) &&
+                          ((timer - pt_es_since) >= 15*60) && ((timer - pt_stuck_time) >= 15*60)) {
+                        float next = pt_setpoint;
+                        if (pt_es == 7)
+                          next = min(pt_setpoint, max(pt_setpoint - 1.0f, floorf(to) - 1.0f));
+                        else
+                          next = max(pt_setpoint, min(max(pt_setpoint, floorf(to)) + 1.0f, floorf(to + 1.5f)));
+                        if (next != pt_setpoint)
+                          ESP_LOGD("power_target", "ES%d stuck at %.0f W: setpoint %.1f -> %.1f", pt_es, p, pt_setpoint, next);
+                        pt_setpoint = next;
+                        pt_stuck_time = timer;
+                        pt_trim_time = timer;
+                        pt_trim_to = to;
+                      }
 
                       // boost: on a step up, raise the setpoint until the LG's own compressor estimate
                       // (lg_cmp_a + lg_cmp_b * (setpoint - outdoor)) is boost_margin above the current speed. The LG only
@@ -381,29 +412,54 @@
 
                       // brake: hold silent mode on to bring the compressor down, on a step down and when the
                       // compressor runs away upward above the target. Released at the target, after the minimum time.
-                      // Not right after a start or a defrost (their own ramps), nor while the evaporator is freezing.
+                      // Not right after a start or a defrost (their own ramps). A step down is not braked while the
+                      // evaporator is freezing; a runaway is, because the runaway itself chills the evaporator
+                      // (12 Nov 10:52: temp18 below 0 at 5.7 C outdoor, 30 minutes at up to 4.4 kW unbraked).
                       const uint32_t brake_hold = (uint32_t) id(power_target_brake_hold).state;
-                      const bool brake_allowed = (brake_hold > 0) && (min(id(temp18_filtered).state, id(temp20_filtered).state) > 0.0f);
+                      const bool brake_allowed = (brake_hold > 0);
+                      const bool evap_freezing = (min(id(temp18_filtered).state, id(temp20_filtered).state) <= 0.0f);
                       if (!pt_brake) {
                         const char *why = nullptr;
-                        if (pt_new_target && (requested_power < p - deadband))
+                        if (pt_new_target && (requested_power < p - deadband) && !evap_freezing)
                           why = "step down";
-                        else if ((err < -deadband) && ((timer - compressortime) >= 15*60) && ((timer - pt_defrost_seen) >= 10*60) &&
-                                 !isnan(pt_cmp_hist[0]) && (cmp - pt_cmp_hist[0] >= 6.0f))
-                          why = "runaway";
+                        else if ((err < -deadband) && ((timer - compressortime) >= 15*60) && ((timer - pt_defrost_seen) >= 10*60)) {
+                          // compressor at least 10 above its lowest speed of the last 5 minutes, while above the target
+                          float cmp_min = NAN;
+                          int n = 0;
+                          for (float v : pt_cmp_hist)
+                            if (!isnan(v)) { cmp_min = isnan(cmp_min) ? v : min(cmp_min, v); n++; }
+                          if ((n >= 3) && (cmp - cmp_min >= 10.0f))
+                            why = "runaway";
+                        }
                         if (brake_allowed && (why != nullptr)) {
                           pt_brake = true;
                           pt_brake_since = timer;
                           ESP_LOGD("power_target", "Brake on (%s): power %.0f W, target %.0f W, compressor %.0f", why, p, requested_power, cmp);
+                          if ((why[0] == 'r') && !isnan(pt_setpoint) && !isnan(to)) {
+                            // the LG climbs toward a setpoint above the outlet; remove that demand (1 K down, and not
+                            // above the outlet) so it does not climb again when the brake releases
+                            const float next = min(pt_setpoint - 1.0f, floorf(to));
+                            ESP_LOGD("power_target", "Runaway: setpoint %.1f -> %.1f (outlet %.1f)", pt_setpoint, next, to);
+                            pt_setpoint = next;
+                            pt_trim_time = timer;
+                            pt_trim_to = to;
+                          }
                         }
                       } else if (!brake_allowed || (pt_new_target && (requested_power > p_raw)) ||
                                  (((timer - pt_brake_since) >= brake_hold) && (p_raw <= requested_power + deadband / 2))) {
                         pt_brake = false;
                         ESP_LOGD("power_target", "Brake off after %lus: power %.0f W, compressor %.0f", (unsigned long) (timer - pt_brake_since), p_raw, cmp);
                       }
-                      pt_cmp_hist[0] = pt_cmp_hist[1];
-                      pt_cmp_hist[1] = pt_cmp_hist[2];
-                      pt_cmp_hist[2] = cmp;
+                      // The LG accumulates setpoint - outlet: a setpoint far above the outlet makes the compressor
+                      // run away, one at the outlet lets it sink to its minimum (DESIGN.md, 9-10 Nov). So the written
+                      // setpoint leads the outlet by at most 1.5 K while pushing up, 0.5 K in ES2, 0 in ES7.
+                      // Held during defrost.
+                      if (!isnan(to))
+                        pt_out_cap = floorf(to + ((pt_es == 7) ? 0.0f : ((pt_es == 2) ? 0.5f : 1.5f)));
+
+                      for (int i = 0; i < 14; i++)
+                        pt_cmp_hist[i] = pt_cmp_hist[i + 1];
+                      pt_cmp_hist[14] = cmp;
 
                       if (pt_brake)
                         pt_status = "Braking";
@@ -415,11 +471,11 @@
                         pt_status = "Decreasing";
                       else
                         pt_status = pt_calc_pending ? "Waiting for model" : "Holding";
-                      ESP_LOGD("power_target", "Target %.0f W, power %.0f W, ES%d, setpoint %.1f", requested_power, p, pt_es, pt_setpoint);
+                      ESP_LOGD("power_target", "Target %.0f W, power %.0f W, ES%d, setpoint %.1f, cap %.0f", requested_power, p, pt_es, pt_setpoint, pt_out_cap);
                     } else {
                       pt_status = "Defrost";
                       pt_brake = false; // no silent mode during defrost
-                      pt_cmp_hist[0] = pt_cmp_hist[1] = pt_cmp_hist[2] = NAN;
+                      for (float &v : pt_cmp_hist) v = NAN;
                     }
                     if (id(energy_state).state != pt_es)
                       set_energy_state(pt_es);
@@ -428,6 +484,8 @@
                       pt_setpoint = target; // no usable model yet, start from the stooklijn
                     pt_setpoint = clamp((float) round(pt_setpoint), 20.0f, (float) id(power_target_max_wtemp).state);
                     target = pt_boost ? clamp((float) round(max(pt_setpoint, pt_boost_sp)), 20.0f, (float) id(power_target_max_wtemp).state) : pt_setpoint;
+                    if (!pt_boost && !isnan(pt_out_cap))
+                      target = clamp(min((float) target, pt_out_cap), 20.0f, (float) id(power_target_max_wtemp).state);
                   }
                   double delta = id(water_temp_aanvoer).state - target;
 
